@@ -134,3 +134,79 @@ describe('ChangeVersionModal dismissal', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
+
+describe('ChangeVersionModal non-host depot guard', () => {
+  const hostRow: LuaManifestRow = { rowId: 1, appId: 294104, manifestId: '111111', enabled: true };
+  const nonHostRow: LuaManifestRow = {
+    rowId: 2,
+    appId: 294101,
+    manifestId: '222222',
+    enabled: true,
+    hostSkip: {
+      reason: 'wrongArch',
+      label: '32-bit',
+      detail: 'Depot 294101 targets 32-bit Windows, while a 64-bit depot is present for this game.',
+    },
+  };
+
+  it('marks non-host rows with the orange class and badge', async () => {
+    renderModal({ initialTab: 'manual', initialRows: [hostRow, nonHostRow] });
+
+    expect(await screen.findByText('32-bit')).toBeInTheDocument();
+    const tableRows = document.querySelectorAll('.version-table tbody tr');
+    expect(tableRows[0]).not.toHaveClass('version-row-nonhost');
+    expect(tableRows[1]).toHaveClass('version-row-nonhost');
+    expect(document.querySelectorAll('.version-manifest-input')[1]).toHaveAttribute('readonly');
+  });
+
+  it('opens the uniform confirm modal on click/type and keeps ChangeVersionModal open on Escape or Cancel', async () => {
+    const onClose = vi.fn();
+    renderModal({ onClose, initialTab: 'manual', initialRows: [hostRow, nonHostRow] });
+    const user = userEvent.setup();
+
+    await screen.findByText('32-bit');
+    const nonHostInput = document.querySelectorAll('.version-manifest-input')[1] as HTMLInputElement;
+    await user.click(nonHostInput);
+
+    expect(await screen.findByText('Non-applicable depot (32-bit)')).toBeInTheDocument();
+    expect(screen.getByText('Depot 294101 is not used on this PC.')).toBeInTheDocument();
+
+    // Escape closes only the stacked confirm modal, not ChangeVersionModal.
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText('Non-applicable depot (32-bit)')).not.toBeInTheDocument());
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Typing also triggers the modal without mutating the input; Cancel keeps it locked.
+    fireEvent.keyDown(nonHostInput, { key: '9' });
+    expect(await screen.findByText('Non-applicable depot (32-bit)')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(nonHostInput.value).toBe('');
+    expect(nonHostInput).toHaveAttribute('readonly');
+  });
+
+  it('opens the confirm modal on toggle click and unlocks editing after Edit anyway', async () => {
+    renderModal({ initialTab: 'manual', initialRows: [hostRow, nonHostRow] });
+    const user = userEvent.setup();
+
+    await screen.findByText('32-bit');
+    const switches = document.querySelectorAll('.version-switch');
+    const nonHostSwitch = switches[1] as HTMLLabelElement;
+    const nonHostToggle = nonHostSwitch.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(nonHostToggle).toBeDisabled();
+    await user.click(nonHostSwitch);
+
+    expect(await screen.findByText('Non-applicable depot (32-bit)')).toBeInTheDocument();
+    expect(nonHostToggle.checked).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'Edit anyway' }));
+    await waitFor(() => expect(screen.queryByText('Non-applicable depot (32-bit)')).not.toBeInTheDocument());
+
+    const nonHostInput = document.querySelectorAll('.version-manifest-input')[1] as HTMLInputElement;
+    expect(nonHostInput).not.toHaveAttribute('readonly');
+    expect(nonHostToggle).not.toBeDisabled();
+    await user.type(nonHostInput, '333333');
+    expect(nonHostInput.value).toBe('333333');
+    await user.click(nonHostSwitch);
+    expect(nonHostToggle.checked).toBe(false);
+  });
+});

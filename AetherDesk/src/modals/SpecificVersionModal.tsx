@@ -4,9 +4,18 @@ import type { LuaManifestIssue } from '../hooks/useLibraryGames';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { useWatchdog } from '../hooks/useWatchdog';
 import { useLibraryGames } from '../hooks/useLibraryGames';
+import { ModalShell } from '../ui/ModalShell';
 import { StatusAlert } from '../ui/StatusAlert';
 import { StatusMessage } from '../types/ui';
 import { toErrorMessage } from '../util/errors';
+
+export type DepotHostSkipReason = 'wrongOs' | 'wrongArch' | 'steamDeckOnly';
+
+export interface DepotHostSkip {
+  reason: DepotHostSkipReason;
+  label: string;
+  detail: string;
+}
 
 export interface LuaManifestRow {
   rowId: number;
@@ -20,6 +29,11 @@ export interface LuaManifestRow {
    * the editor can offer the repair instead of refusing to open.
    */
   issue?: LuaManifestIssue;
+  /**
+   * Set when Steam's cached AppInfo indicates this depot does not target this
+   * host (different OS, 32-bit sibling alongside 64-bit, or Steam Deck only).
+   */
+  hostSkip?: DepotHostSkip;
 }
 
 /**
@@ -53,6 +67,38 @@ interface ManualVersionEditorProps {
   onClose: () => void;
 }
 
+/** Uniform confirmation dialog before unlocking a non-host depot row for editing. */
+const NonHostDepotConfirmModal = ({
+  row,
+  onConfirm,
+  onCancel,
+}: {
+  row: LuaManifestRow;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) => (
+  <ModalShell
+    title={`Non-applicable depot (${row.hostSkip?.label ?? 'Other host'})`}
+    onClose={onCancel}
+    containerClassName="uninstall-modal"
+    bodyClassName="uninstall-modal-body"
+  >
+    <p className="uninstall-modal-lead">Depot {row.appId} is not used on this PC.</p>
+    <p className="uninstall-modal-copy">
+      {row.hostSkip?.detail ?? 'Steam and AetherDLL skip this depot on this system.'} Editing its manifest ID or toggle
+      is normally unnecessary.
+    </p>
+    <div className="uninstall-modal-actions">
+      <button type="button" className="uninstall-btn uninstall-btn-primary" onClick={onConfirm}>
+        Edit anyway
+      </button>
+      <button type="button" className="uninstall-btn uninstall-btn-secondary" onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  </ModalShell>
+);
+
 /** The per-depot manifest editor, hosted by the Change Version modal as its "Manual" tab. */
 export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersionEditorProps) => {
   const [rows, setRows] = useState<LuaManifestRow[]>(prepareManifestRows(initialRows));
@@ -61,6 +107,8 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
   // build applied in the Auto tab (or any external edit) becomes the new
   // baseline instead of being flagged as a manual change.
   const [baseline, setBaseline] = useState<LuaManifestRow[]>(initialRows);
+  const [unlockedRowIds, setUnlockedRowIds] = useState<Set<number>>(() => new Set());
+  const [pendingUnlockRow, setPendingUnlockRow] = useState<LuaManifestRow | null>(null);
   const [status, setStatus] = useState<StatusMessage>(
     initialRows.length > 0
       ? { text: 'Lua ready. Edit manifest IDs or disable depots, then apply.', type: 'info' }
@@ -138,9 +186,9 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
     [rows]
   );
 
-  // Escape closes only when nothing would be lost: a stray key must never
-  // discard pending manifest edits. The header X stays as the explicit exit.
-  useModalDismiss(onClose, isApplying || hasChanges);
+  // Escape closes only when nothing would be lost and no stacked confirm popup
+  // is open: while NonHostDepotConfirmModal is open, Escape must close only it.
+  useModalDismiss(onClose, isApplying || hasChanges || pendingUnlockRow !== null);
 
   const handleOpenSteamDb = async () => {
     try {
@@ -221,6 +269,8 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
               // not a broken load today.
               const severity: 'ok' | 'warn' | 'invalid' =
                 typedInvalid || row.issue?.active ? 'invalid' : row.issue ? 'warn' : 'ok';
+              const isNonHost = Boolean(row.hostSkip) && !row.issue;
+              const isHostLocked = isNonHost && !unlockedRowIds.has(row.rowId);
               return (
                 <tr
                   key={row.rowId}
@@ -228,34 +278,78 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
                     !row.enabled ? 'disabled' : '',
                     severity === 'invalid' ? 'version-row-invalid' : '',
                     severity === 'warn' ? 'version-row-warn' : '',
+                    isNonHost ? 'version-row-nonhost' : '',
                   ]
                     .filter(Boolean)
                     .join(' ')}
                 >
-                  <td className="version-appid">{row.appId}</td>
+                  <td className="version-appid" title={isNonHost ? row.hostSkip?.detail : undefined}>
+                    <span className="version-appid-value">{row.appId}</span>
+                    {isNonHost && row.hostSkip && <span className="version-host-badge">{row.hostSkip.label}</span>}
+                  </td>
                   <td>
                     <input
                       className={[
                         'version-manifest-input',
                         severity === 'invalid' ? 'version-manifest-input--invalid' : '',
                         severity === 'warn' ? 'version-manifest-input--warn' : '',
+                        isHostLocked ? 'version-manifest-input--nonhost-locked' : '',
                       ]
                         .filter(Boolean)
                         .join(' ')}
                       value={row.manifestInput || ''}
                       placeholder={row.manifestId}
-                      disabled={isApplying || (!row.enabled && !row.issue)}
+                      readOnly={isHostLocked}
+                      disabled={isApplying || (!row.enabled && !row.issue && !isHostLocked)}
                       aria-invalid={severity === 'invalid'}
-                      onChange={(e) => updateRow(row.rowId, { manifestInput: e.target.value })}
+                      title={isHostLocked ? row.hostSkip?.detail : undefined}
+                      onClick={() => {
+                        if (isHostLocked) setPendingUnlockRow(row);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!isHostLocked) return;
+                        if (e.key === 'Tab' || e.key === 'Escape' || e.key === 'Shift') return;
+                        e.preventDefault();
+                        setPendingUnlockRow(row);
+                      }}
+                      onPaste={(e) => {
+                        if (isHostLocked) {
+                          e.preventDefault();
+                          setPendingUnlockRow(row);
+                        }
+                      }}
+                      onChange={(e) => {
+                        if (isHostLocked) return;
+                        updateRow(row.rowId, { manifestInput: e.target.value });
+                      }}
                     />
                   </td>
                   <td className="version-switch-cell">
-                    <label className="version-switch">
+                    <label
+                      className={['version-switch', isHostLocked ? 'version-switch--nonhost-locked' : '']
+                        .filter(Boolean)
+                        .join(' ')}
+                      title={isHostLocked ? row.hostSkip?.detail : undefined}
+                      tabIndex={!isApplying && isHostLocked ? 0 : undefined}
+                      onClick={() => {
+                        if (!isApplying && isHostLocked) setPendingUnlockRow(row);
+                      }}
+                      onKeyDown={(e) => {
+                        if (isApplying || !isHostLocked) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setPendingUnlockRow(row);
+                        }
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={row.enabled}
-                        disabled={isApplying}
-                        onChange={(e) => updateRow(row.rowId, { enabled: e.target.checked })}
+                        disabled={isApplying || isHostLocked}
+                        onChange={(e) => {
+                          if (isHostLocked) return;
+                          updateRow(row.rowId, { enabled: e.target.checked });
+                        }}
                       />
                       <span></span>
                     </label>
@@ -279,6 +373,17 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
           {isApplying ? 'Applying...' : 'Apply Edits'}
         </button>
       </div>
+
+      {pendingUnlockRow && (
+        <NonHostDepotConfirmModal
+          row={pendingUnlockRow}
+          onConfirm={() => {
+            setUnlockedRowIds((prev) => new Set(prev).add(pendingUnlockRow.rowId));
+            setPendingUnlockRow(null);
+          }}
+          onCancel={() => setPendingUnlockRow(null)}
+        />
+      )}
     </>
   );
 };
