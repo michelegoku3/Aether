@@ -120,6 +120,7 @@ void SteamBetaChannelTest();
 void AppOverviewTest();
 void DepotPlanTest();
 void PackageSeedTest();
+void LicenseDispatchTest();
 void RecheckTest();
 void AchievementState();
 void AchievementBitfield();

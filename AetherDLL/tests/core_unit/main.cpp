@@ -57,6 +57,7 @@ int main(int argc, char** argv) {
         {"overview", AppOverviewTest},
         {"depot_plan", DepotPlanTest},
         {"package_seed", PackageSeedTest},
+        {"license_dispatch", LicenseDispatchTest},
         {"recheck", RecheckTest},
         {"achievement_state", AchievementState},
         {"achievement_bitfield", AchievementBitfield},
