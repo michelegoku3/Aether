@@ -1107,7 +1107,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 26px;
+  gap: 10px;
   flex-shrink: 0;
 }
 

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { GameHeroImage } from '../ui/GameHeroImage';
-import { DownloadIcon, WrenchIcon } from '../ui/icons';
+import { DownloadIcon, TrophyIcon, WrenchIcon } from '../ui/icons';
 import { useLibraryGames, type LuaManifestIssue } from '../hooks/useLibraryGames';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import { AchievementsModal } from './AchievementsModal';
 import { OnlinePanel, type OnlineStatus } from './OnlinePanel';
 import { OnlineChoiceModal, type AppPresenceMode } from './OnlineChoiceModal';
 import { CleanupModal } from './CleanupModal';
@@ -192,6 +193,7 @@ export const LibraryGameActionsModal = ({
   const liveInstalling = liveGame.installing;
   const [updatesEnabled, setUpdatesEnabled] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
+  const [showAchievements, setShowAchievements] = useState(false);
   const [showOnlineChoice, setShowOnlineChoice] = useState(false);
   const [showOnlinePanel, setShowOnlinePanel] = useState(false);
   const [onlineBusy, setOnlineBusy] = useState(false);
@@ -535,6 +537,17 @@ export const LibraryGameActionsModal = ({
               {/* The `title` lives on the wrapper too: WebView2 suppresses
                   hover on disabled controls, so the hint must survive the
                   button being disabled. */}
+              <span className="game-action-icon-wrap" title="View, unlock, or lock Steam achievements for this game">
+                <button
+                  className="game-action-btn game-action-icon-btn"
+                  onClick={() => setShowAchievements(true)}
+                  disabled={disabled}
+                  aria-label="Achievements"
+                  title="Achievements"
+                >
+                  <TrophyIcon size={18} />
+                </button>
+              </span>
               <span
                 className="game-action-icon-wrap"
                 title="Restore from backup or regenerate via Hubcap every manifest referenced by this game's Lua"
@@ -583,6 +596,14 @@ export const LibraryGameActionsModal = ({
         />
       )}
       {showOnlinePanel && <OnlinePanel game={game} onClose={handleCloseUco2Panel} />}
+      {showAchievements && (
+        <AchievementsModal
+          appId={game.id}
+          gameName={liveGame.name}
+          onClose={() => setShowAchievements(false)}
+          onStatus={onStatus}
+        />
+      )}
 
       {cleanConfirm && (
         <CleanupModal

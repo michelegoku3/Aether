@@ -322,3 +322,68 @@ describe('online presence reads', () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('set_aether_excluded', { appId: 100, enabled: true }));
   });
 });
+
+describe('Achievements manager entrypoint', () => {
+  beforeEach(() => {
+    queryGameStateMock.mockResolvedValue(false);
+    mockInvokeCommands({
+      get_game_achievements: {
+        appId: 100,
+        gameName: 'Game 100',
+        schemaVersion: 1,
+        schemaSource: 'steamCache',
+        luaManaged: true,
+        accountId: 42,
+        accounts: [
+          {
+            accountId: 42,
+            steamId64: '76561197960265770',
+            personaName: 'Tester',
+            isActive: true,
+            hasStatsCache: true,
+          },
+        ],
+        unlockedCount: 0,
+        totalCount: 1,
+        sources: {
+          steamBinPresent: true,
+          backupBinPresent: false,
+          backupJsonPresent: false,
+          steamUnlockCount: 0,
+          backupUnlockCount: 0,
+          mergedFromBackup: false,
+          pendingChanges: 0,
+          crc: 0,
+        },
+        achievements: [
+          {
+            id: 0,
+            bucket: 0,
+            bit: 0,
+            apiName: 'ACH_TEST',
+            name: 'Test Unlock',
+            description: 'Do a thing',
+            hidden: false,
+            unlocked: false,
+            unlockTime: 0,
+            iconUrl: null,
+            iconGrayUrl: null,
+            progress: null,
+          },
+        ],
+      },
+    });
+  });
+
+  it('opens the Achievements modal from the icon button and loads game achievements', async () => {
+    renderModal(game(100, { installed: true }), [game(100, { installed: true })]);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: /Achievements/i }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith('get_game_achievements', { appId: 100, accountId: null })
+    );
+    await screen.findByText('Test Unlock');
+  });
+});

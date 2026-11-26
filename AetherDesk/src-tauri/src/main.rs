@@ -247,6 +247,8 @@ fn main() {
             commands::library::open_steamdb_patchnotes,
             commands::home_links::open_home_resource,
             commands::game_info::get_game_info,
+            commands::achievements::get_game_achievements,
+            commands::achievements::save_game_achievements,
             commands::steamless::pick_and_run_steamless,
             commands::online::get_online_status,
             commands::online::get_online_preferences,

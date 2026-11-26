@@ -117,6 +117,27 @@ export const HourglassIcon = ({ size = 14 }: { size?: number }) => (
   </svg>
 );
 
+/** Trophy icon (Steam achievement manager action). */
+export const TrophyIcon = ({ size = 15 }: { size?: number }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.1"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M8 21h8" />
+    <path d="M12 17v4" />
+    <path d="M7 4h10v6a5 5 0 0 1-10 0V4z" />
+    <path d="M7 6H4.5a1.5 1.5 0 0 0-1.5 1.5v1A3.5 3.5 0 0 0 6.5 12H7" />
+    <path d="M17 6h2.5A1.5 1.5 0 0 1 21 7.5v1a3.5 3.5 0 0 1-3.5 3.5H17" />
+  </svg>
+);
+
 /** Show-password eye (toggles a secret input into plain text). */
 export const EyeIcon = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">

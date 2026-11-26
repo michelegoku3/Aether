@@ -765,6 +765,15 @@ where
     })
 }
 
+pub fn default_steam_gate(steam_root: &Path, allow_steam_kill: bool) -> Result<(), String> {
+    crate::core::steam_process::ensure_steam_closed_with_message(
+        steam_root,
+        allow_steam_kill,
+        STEAM_RUNNING_ACHIEVEMENTS_ERROR,
+        "saving achievement changes",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
