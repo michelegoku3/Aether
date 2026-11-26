@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { InstalledGame, useLibraryGames } from '../hooks/useLibraryGames';
 import { CrackModal, CrackTargetGame } from '../modals/CrackModal';
+import { AddDlcNoticeModal } from '../modals/FeatureNoticeModal';
 import { FindCrackModal } from '../modals/FindCrackModal';
 import { SavedCrackModal } from '../modals/SavedCrackModal';
 import { AntivirusExclusionModal } from '../modals/AntivirusExclusionModal';
@@ -45,6 +46,7 @@ export const HomeView = memo(function HomeView() {
   // Saved-crack reuse prompt (backup/<appId>/crack already populated).
   const [savedCrackTarget, setSavedCrackTarget] = useState<CrackTargetGame | null>(null);
   const [showFindCrack, setShowFindCrack] = useState(false);
+  const [showAddDlcNotice, setShowAddDlcNotice] = useState(false);
   const searchPanelRef = useRef<HTMLDivElement | null>(null);
 
   /**
@@ -296,11 +298,7 @@ export const HomeView = memo(function HomeView() {
         >
           Apply Crack
         </button>
-        <button
-          className="game-action-btn"
-          disabled={true}
-          title="SmokeAPI is not available yet, add the game in the Store for DLCs. Don't use them online."
-        >
+        <button className="game-action-btn" disabled={!hasSelectedGame} onClick={() => setShowAddDlcNotice(true)}>
           ADD DLCs
         </button>
         <button
@@ -324,6 +322,8 @@ export const HomeView = memo(function HomeView() {
           }}
         />
       )}
+
+      {showAddDlcNotice && <AddDlcNoticeModal onClose={() => setShowAddDlcNotice(false)} />}
 
       {showAntivirus && <AntivirusExclusionModal onDone={() => setShowAntivirus(false)} />}
 

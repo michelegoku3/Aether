@@ -1,28 +1,35 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Sidebar } from './Sidebar';
 
-const renderSidebar = () =>
+const renderSidebar = (overrides: Partial<React.ComponentProps<typeof Sidebar>> = {}) =>
   render(
     <Sidebar
       activeTab="home"
       onTabChange={vi.fn()}
+      onBackupClick={vi.fn()}
       onSteamAction={vi.fn()}
       steamRunning={false}
       dllUpdateAvailable={false}
       updateIsTest={false}
+      {...overrides}
     />
   );
 
 describe('Sidebar', () => {
-  it('keeps the disabled Backup entry non-interactive but explains itself', () => {
-    renderSidebar();
+  it('invokes onBackupClick without switching tabs when Backup is clicked', async () => {
+    const user = userEvent.setup();
+    const onTabChange = vi.fn();
+    const onBackupClick = vi.fn();
+    renderSidebar({ onTabChange, onBackupClick });
 
     const backup = screen.getByRole('button', { name: 'Backup' });
-    expect(backup).toBeDisabled();
-    // WebView2 suppresses tooltips on disabled controls: the hint lives on the
-    // wrapper, not on the button.
-    expect(backup).not.toHaveAttribute('title');
-    expect(backup.parentElement).toHaveAttribute('title', 'Backup is not available yet');
+    expect(backup).toBeEnabled();
+
+    await user.click(backup);
+
+    expect(onBackupClick).toHaveBeenCalledOnce();
+    expect(onTabChange).not.toHaveBeenCalled();
   });
 });

@@ -23,6 +23,7 @@ const game = (id: number, state: Partial<InstalledGame> = {}): InstalledGame => 
 });
 
 const applyCrackButton = () => screen.getByRole('button', { name: 'Apply Crack' });
+const addDlcButton = () => screen.getByRole('button', { name: 'ADD DLCs' });
 
 /** Type a name and pick the suggestion, exactly like a user would. */
 const selectGame = async (name: string) => {
@@ -54,6 +55,26 @@ describe('HomeView game actions', () => {
     await waitFor(() =>
       expect(screen.getByText('Apply Crack requires the selected game to be installed locally.')).toBeInTheDocument()
     );
+  });
+
+  it('keeps ADD DLCs disabled until a game is selected and opens the notice modal on click', async () => {
+    render(<HomeView />);
+
+    expect(addDlcButton()).toBeDisabled();
+
+    const user = await selectGame('Alpha');
+
+    expect(addDlcButton()).toBeEnabled();
+    expect(addDlcButton()).not.toHaveAttribute('title');
+
+    await user.click(addDlcButton());
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('Add DLCs')).toBeInTheDocument();
+    expect(screen.getByText(/CreamAPI or SmokeAPI/i)).toBeInTheDocument();
+
+    await user.click(screen.getByText('Close'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });
 

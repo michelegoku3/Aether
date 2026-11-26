@@ -243,22 +243,6 @@ body {
   background-color: var(--bg-item-hover);
 }
 
-/* Disabled entries (Backup) keep the tooltip from their wrapper but must not
-   react to hover or advertise a click. */
-.nav-disabled-wrap {
-  display: block;
-  width: 100%;
-}
-
-.nav-item:disabled {
-  cursor: default;
-}
-
-.nav-item:disabled:hover {
-  color: var(--color-muted);
-  background-color: transparent;
-}
-
 .nav-item.active {
   color: var(--color-cyan);
   background-color: var(--bg-item-active);

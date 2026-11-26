@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Sidebar } from './layout/Sidebar';
 import { MainContent } from './layout/MainContent';
 import type {
@@ -8,6 +8,7 @@ import type {
   MainContentUpdates,
 } from './layout/MainContent';
 import { LibraryGamesProvider } from './hooks/useLibraryGames';
+import { BackupNoticeModal } from './modals/FeatureNoticeModal';
 import { HubcapKeyExpiredModal } from './modals/HubcapKeyExpiredModal';
 import { SteamPathWarningModal } from './modals/SteamPathWarningModal';
 import { UnsavedChangesModal } from './modals/UnsavedChangesModal';
@@ -28,6 +29,7 @@ export default function App() {
   const hubcap = useHubcapUsage();
   const hubcapKey = useHubcapKeyStatus(hubcap.usage);
   const navigation = useUnsavedNavigationGuard();
+  const [showBackupNotice, setShowBackupNotice] = useState(false);
 
   useAppBootstrap({
     loadDeskVersion: updates.loadDeskVersion,
@@ -117,6 +119,7 @@ export default function App() {
         <Sidebar
           activeTab={navigation.activeTab}
           onTabChange={navigation.changeTab}
+          onBackupClick={() => setShowBackupNotice(true)}
           onSteamAction={steam.runAction}
           steamRunning={steam.running}
           steamBusy={steam.busy}
@@ -144,6 +147,8 @@ export default function App() {
         {navigation.showSteamPathWarning && (
           <SteamPathWarningModal onGoToSettings={navigation.goToSettings} onClose={navigation.closeSteamPathWarning} />
         )}
+
+        {showBackupNotice && <BackupNoticeModal onClose={() => setShowBackupNotice(false)} />}
 
         {!navigation.showSteamPathWarning && hubcap.usage.hasKey && hubcapKey.inactive && !hubcapKey.dismissed && (
           <HubcapKeyExpiredModal

@@ -5,6 +5,7 @@ export type TabType = 'aether' | 'home' | 'store' | 'library' | 'backup' | 'sett
 interface SidebarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
+  onBackupClick: () => void;
   onSteamAction: () => void;
   // Steam state from the shared monitor (core::steam_monitor): null = waiting
   // for the first read. Drives the Start/Restart label.
@@ -20,6 +21,7 @@ interface SidebarProps {
 export const Sidebar = memo(function Sidebar({
   activeTab,
   onTabChange,
+  onBackupClick,
   onSteamAction,
   steamRunning,
   steamBusy,
@@ -57,13 +59,9 @@ export const Sidebar = memo(function Sidebar({
           Library
         </button>
 
-        {/* Backup: disabled until the view ships. The hint lives on the wrapper
-            because WebView2 suppresses tooltips on disabled controls. */}
-        <span className="nav-disabled-wrap" title="Backup is not available yet">
-          <button disabled={true} className="nav-item">
-            Backup
-          </button>
-        </span>
+        <button type="button" className="nav-item" onClick={onBackupClick}>
+          Backup
+        </button>
 
         {/* Separator Line */}
         <div className="separator"></div>
