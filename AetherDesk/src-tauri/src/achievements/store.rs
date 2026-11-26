@@ -4,6 +4,7 @@
 //!   1. `<AetherData>/backup/<appid>/achievements/UserGameStats_<account>_<appid>.json`
 //!   2. `<AetherData>/backup/<appid>/achievements/UserGameStats_<account>_<appid>.bin`
 //!   3. `<Steam>/appcache/stats/UserGameStats_<account>_<appid>.bin`
+//!
 //! Updating both backup and Steam cache intentionally keeps counts in sync so
 //! AetherDLL's monotone guard (`SteamStatsCache.cpp`) never reverts explicit relocks.
 
@@ -116,7 +117,8 @@ pub fn is_app_lua_managed(steam_root: &Path, app_id: u32) -> bool {
 pub fn now_unix_seconds() -> u32 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs().min(u64::from(u32::MAX)) as u32)
+        .ok()
+        .and_then(|d| u32::try_from(d.as_secs().min(u64::from(u32::MAX))).ok())
         .unwrap_or(0)
 }
 
@@ -580,7 +582,7 @@ pub fn commit_achievement_changes_blocking(
         allow_steam_kill,
         now_unix,
         steam_gate_fn,
-        |path, bytes| write_atomic(path, bytes),
+        write_atomic,
     )
 }
 
@@ -635,7 +637,7 @@ where
         &schema.achievement_buckets,
     );
 
-    let mut desired_unlocks = reconciled.unlocked.clone();
+    let mut desired_unlocks = reconciled.unlocked;
     let mut changed_buckets = BTreeSet::new();
     let mut applied_unlocks = 0usize;
     let mut applied_relocks = 0usize;
@@ -666,8 +668,8 @@ where
         }
     }
     if let Ok(text) = fs::read_to_string(&backup_json_path) {
-        if let Ok((_, json_stats)) = parse_backup_json(&text) {
-            for (sid, val) in json_stats {
+        if let Ok(parsed_json) = parse_backup_json(&text) {
+            for (sid, val) in parsed_json.stats {
                 if !schema.achievement_buckets.contains(&sid) {
                     preserved_stats.entry(sid).or_insert(val);
                 }
@@ -955,6 +957,7 @@ mod tests {
         serialize_binary(&doc)
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn noop_gate(_steam: &Path, _allow: bool) -> Result<(), String> {
         Ok(())
     }
@@ -1024,11 +1027,11 @@ mod tests {
         // Float stat bucket 5 must be untouched!
         assert_eq!(steam_parsed.stat_values.get(&5), Some(&42.5));
 
-        let (json_unlocks, _) = parse_backup_json(
+        let parsed_json = parse_backup_json(
             &std::fs::read_to_string(backup_user_json_path(&data, acct, app)).unwrap(),
         )
         .unwrap();
-        assert_eq!(json_unlocks.get(&1), Some(&1_760_000_111));
+        assert_eq!(parsed_json.unlocks.get(&1), Some(&1_760_000_111));
     }
 
     #[test]
@@ -1089,9 +1092,9 @@ mod tests {
         assert!(backup_parsed.unlocked.contains_key(&0));
         assert!(!backup_parsed.unlocked.contains_key(&1));
 
-        let (json_unlocks, _) = parse_backup_json(&std::fs::read_to_string(&bj).unwrap()).unwrap();
-        assert_eq!(json_unlocks.len(), 1);
-        assert!(!json_unlocks.contains_key(&1));
+        let parsed_json = parse_backup_json(&std::fs::read_to_string(&bj).unwrap()).unwrap();
+        assert_eq!(parsed_json.unlocks.len(), 1);
+        assert!(!parsed_json.unlocks.contains_key(&1));
     }
 
     #[test]

@@ -265,7 +265,8 @@ Promise rejected at runtime with `command X missing required key Y`.
 | `game_name: Option<String>` | `gameName` | `trigger_luatools_download` / `prepare_luatools_specific_version_download`: optional hint forwarded to lua.tools (`&game_name=`), labels only the account's download history |
 | `include_subscriptions: bool` | `includeSubscriptions` | `sync_hubcap_workshop_manifests`: `true` only from the explicit Repair action; the background monitor calls the Rust function with `false` |
 | `show_online: bool` | `showOnline` | §7.1 |
-| `allow_steam_kill: bool` | `allowSteamKill` | `install_aether_dll` / `uninstall_aether_dll` / `reset_aether_steam_path`: `true` only after the user accepts the "Close Steam?" popup; the backend then terminates Steam (if still running) and every running game from its libraries before writing into the Steam folder |
+| `allow_steam_kill: bool` | `allowSteamKill` | `install_aether_dll` / `uninstall_aether_dll` / `reset_aether_steam_path` / `save_game_achievements`: `true` only after the user accepts the "Close Steam?" popup; the backend then terminates Steam (if still running) and every running game from its libraries before writing into the Steam folder |
+| `account_id: Option<u32>` / `u32` | `accountId` | `get_game_achievements` / `save_game_achievements` |
 
 ### 7.1 `showonline` is a value, not a key
 
@@ -602,6 +603,14 @@ leaves every other app alone:
   client, which pin every field number and the rebuilt body shape).
 - **Switch.** `[achievements] ui_service` in `aethercore.toml`, default `true`.
   Off means the reply is Valve's; nothing else changes.
+
+### 11.1 Desk achievement editor and monotone-guard coordination
+
+Twins: Desk (`AetherDesk/src-tauri/src/achievements/`), DLL (`AetherDLL/AetherCore/hooks/wire/SteamStatsCache.cpp`, `UserStatsSnapshot.cpp`).
+
+- **Steam closed before writes.** Saving achievement edits refuses with `STEAM_RUNNING:` unless `allowSteamKill` is true (`ensure_steam_closed_with_message` closes Steam and running library games before writing `appcache\stats`).
+- **Three-target atomic commit with rollback.** Desk updates `<AetherData>\backup\<app_id>\achievements\UserGameStats_<account>_<app_id>.json` (`aether-achievement-mirror-v1`), `<AetherData>\backup\<app_id>\achievements\UserGameStats_<account>_<app_id>.bin`, and `<Steam>\appcache\stats\UserGameStats_<account>_<app_id>.bin` under the per-game mutation lock (`core::game_mutations`). Updating both backups alongside Steam's cache keeps achievement counts equal so AetherDLL's monotone guard never reverts intentional relocks.
+- **Lossless KV1 patching.** Desk preserves all non-achievement stat buckets (`Int32`/`Float32` counters), unknown keys, and outer dictionary markers; relocking clears bits in both `data` and `pendingbits` and removes the corresponding entry from `AchievementTimes`.
 
 ---
 

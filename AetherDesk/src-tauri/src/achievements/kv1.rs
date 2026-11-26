@@ -51,6 +51,7 @@ impl KvDict {
         }
     }
 
+    #[cfg(test)]
     pub fn get_dict_mut(&mut self, key: &str) -> Option<&mut KvDict> {
         self.entries
             .iter_mut()
@@ -88,6 +89,7 @@ impl KvDict {
         }
     }
 
+    #[cfg(test)]
     pub fn remove(&mut self, key: &str) -> Option<KvValue> {
         self.entries
             .iter()

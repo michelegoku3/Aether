@@ -181,7 +181,13 @@ struct SnapshotMirrorJson {
     stats: Vec<SnapshotStatJson>,
 }
 
-pub fn parse_backup_json(text: &str) -> Result<(BTreeMap<u32, u32>, BTreeMap<u32, u32>), String> {
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ParsedBackupJson {
+    pub unlocks: BTreeMap<u32, u32>,
+    pub stats: BTreeMap<u32, u32>,
+}
+
+pub fn parse_backup_json(text: &str) -> Result<ParsedBackupJson, String> {
     let parsed: SnapshotMirrorJson = serde_json::from_str(text)
         .map_err(|e| format!("Failed to parse achievement backup JSON: {e}"))?;
     let mut unlocks = BTreeMap::new();
@@ -192,7 +198,7 @@ pub fn parse_backup_json(text: &str) -> Result<(BTreeMap<u32, u32>, BTreeMap<u32
     for st in parsed.stats {
         stats.insert(st.sid, st.value);
     }
-    Ok((unlocks, stats))
+    Ok(ParsedBackupJson { unlocks, stats })
 }
 
 fn read_bin_if_present(
@@ -288,8 +294,8 @@ pub fn load_reconciled_user_state(
                     app_id,
                     account_id,
                     backup_json_path.display(),
-                    parsed.0.len(),
-                    parsed.1.len()
+                    parsed.unlocks.len(),
+                    parsed.stats.len()
                 );
                 Some(parsed)
             }
@@ -337,12 +343,12 @@ pub fn load_reconciled_user_state(
             out.stat_values.entry(sid).or_insert(val);
         }
     }
-    if let Some((json_unlocks, json_stats)) = &backup_json {
-        for (&id, &ts) in json_unlocks {
+    if let Some(parsed_json) = &backup_json {
+        for (&id, &ts) in &parsed_json.unlocks {
             backup_ids.insert(id);
             merge_unlock_entry(&mut out.unlocked, id, ts);
         }
-        for (&sid, &val) in json_stats {
+        for (&sid, &val) in &parsed_json.stats {
             if !achievement_buckets.contains(&sid) {
                 out.stat_values.entry(sid).or_insert(val as f32);
             }

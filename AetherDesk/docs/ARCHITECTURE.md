@@ -47,6 +47,7 @@ invariants
 | `external_tools/` | Discovery and integrity checks for the tools bundled under `src-tauri/ExternalTools/`. |
 | `updater/` | AetherDesk and AetherDLL updates from GitHub: version check, install, uninstall, restore. |
 | `game_info/` | Per-game info and SteamDB links (cache, service, model). |
+| `achievements/` | Binary KV1 schema/stats readers and three-target transactional achievement editor. |
 | `util/` | Validation, dialogs, browser opener, game resolver. |
 | `tests/` | Crate-level integration tests; the placement rule is in `tests/mod.rs`. |
 

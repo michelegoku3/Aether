@@ -890,6 +890,11 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("plan_online", &["appId"]),
         ("disable_online", &["appId", "confirmCleanup"]),
         ("clean_online_conflicts", &["appId", "confirm"]),
+        ("get_game_achievements", &["appId", "accountId"]),
+        (
+            "save_game_achievements",
+            &["appId", "accountId", "edits", "allowSteamKill"],
+        ),
     ];
 
     for (command, expected) in contracts {
