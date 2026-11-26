@@ -433,4 +433,100 @@ void AcfOwnerTest() {
         c.alreadyApplied = true;
         CHECK(PlanOwnerAction(c).action == OwnerAction::Skip);
     }
+
+    // ---- Self-banner guard ------------------------------------------------
+    // When the configured banner owner is the signed-in account itself,
+    // stamping LastOwner would claim the install locally without any banner
+    // benefit and hides real family shares. PlanOwnerAction skips setting and
+    // removes any leftover foreign/stale LastOwner instead.
+    {
+        OwnerContext ctx;
+        ctx.managed = true;
+        ctx.listed = true;
+        ctx.bannerEnabled = true;
+        ctx.bannerSteamId = 76561199841844794ull;
+        ctx.activeSteamId = 76561199841844794ull;
+        ctx.currentLastOwner = 76561199876393402ull;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Remove);
+        CHECK(!IsActiveBannerOwner(ctx));
+    }
+    {
+        OwnerContext ctx;
+        ctx.managed = true;
+        ctx.listed = true;
+        ctx.bannerEnabled = true;
+        ctx.bannerSteamId = 76561199841844794ull;
+        ctx.activeSteamId = 76561199841844794ull;
+        ctx.currentLastOwner = 0;
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Skip);
+        CHECK(!IsActiveBannerOwner(ctx));
+    }
+    {
+        // Different banner account from the signed-in user remains valid.
+        OwnerContext ctx;
+        ctx.managed = true;
+        ctx.listed = true;
+        ctx.bannerEnabled = true;
+        ctx.bannerSteamId = 76561199876393402ull;
+        ctx.activeSteamId = 76561199841844794ull;
+        CHECK(IsActiveBannerOwner(ctx));
+        const OwnerPlan plan = PlanOwnerAction(ctx);
+        CHECK(plan.action == OwnerAction::Set);
+        CHECK_EQ(plan.owner, 76561199876393402ull);
+    }
+
+    // ---- ResolveEffectiveManifestOwner ------------------------------------
+    // Aether's owner_state.txt distinguishes Aether's own stale banner stamps
+    // from genuine Valve Steam Family LastOwner values on disk.
+    {
+        // Stale Aether banner stamp (switched to self or disabled banner) with no
+        // pre-Aether original: never misclassify as a real family lender.
+        ManifestOwnerEvidence e{};
+        e.manifestLastOwner = 1916127674u;
+        e.recorded = true;
+        e.record.written = 76561199876393402ull;
+        e.record.originalKnown = false;
+        e.activeAccountId = 1881579066u;
+        e.ownBannerNow = false;
+        CHECK_EQ(ResolveEffectiveManifestOwner(e), 0u);
+    }
+    {
+        // Matching current active banner stamp keeps the lender id so the UI
+        // renders the cosmetic banner.
+        ManifestOwnerEvidence e{};
+        e.manifestLastOwner = 1916127674u;
+        e.recorded = true;
+        e.record.written = 76561199876393402ull;
+        e.record.originalKnown = false;
+        e.activeAccountId = 1881579066u;
+        e.ownBannerNow = true;
+        CHECK_EQ(ResolveEffectiveManifestOwner(e), 1916127674u);
+    }
+    {
+        // Boot strip removed LastOwner (written = 0) of a genuine Steam Family
+        // game that originally belonged to 777: recover 777 cleanly.
+        ManifestOwnerEvidence e{};
+        e.manifestLastOwner = 0u;
+        e.recorded = true;
+        e.record.written = 0ull;
+        e.record.originalKnown = true;
+        e.record.original = 76561197960266505ull; // low32 = 777
+        e.activeAccountId = 1881579066u;
+        e.ownBannerNow = false;
+        CHECK_EQ(ResolveEffectiveManifestOwner(e), 777u);
+    }
+    {
+        // Steam overwrote LastOwner with a different account after Aether's
+        // write: trust Steam's new LastOwner.
+        ManifestOwnerEvidence e{};
+        e.manifestLastOwner = 555u;
+        e.recorded = true;
+        e.record.written = 76561199876393402ull;
+        e.record.originalKnown = false;
+        e.activeAccountId = 1881579066u;
+        e.ownBannerNow = false;
+        CHECK_EQ(ResolveEffectiveManifestOwner(e), 555u);
+    }
 }

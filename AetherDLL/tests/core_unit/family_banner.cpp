@@ -100,4 +100,19 @@ void FamilyBannerTest() {
     CHECK(!ac::luadata::IsRealFamilyShare(kApp));
     CHECK(ac::luadata::BannerFamilyCount() == 0);
     CHECK(!ac::luadata::HasDepot(kApp)); // genuinely owned: Steam answers
+
+    // --- Map-derived family share reconciliation ----------------------------
+    // A share inferred solely from FamilyLenders (`fromSteam=false`) recovers
+    // to Spoofed if FamilyLenders drops it, whereas a real Steam-reported share
+    // (`fromSteam=true`) stays sticky.
+    CHECK(ShouldClearMapFamilyShare(true, false, 0u, false));
+    CHECK(!ShouldClearMapFamilyShare(false, false, 0u, false)); // Steam-reported stays
+    CHECK(!ShouldClearMapFamilyShare(true, true, 0u, false));   // already banner
+    CHECK(!ShouldClearMapFamilyShare(true, false, 12345u, false));
+    CHECK(ShouldClearMapFamilyShare(true, false, bannerAccount, true)); // banner enabled for lender
+
+    // Setting banner account == active account is never treated as a valid
+    // banner stamp or Valve family license.
+    CHECK(!IsOwnBannerStamp(1868140, kThisLogin, true, listed, 76561197960265728ull + kThisLogin, kThisLogin));
+    CHECK(!IsValveFamilyLicense(1868140, kThisLogin, kThisLogin, true, listed, 76561197960265728ull + kThisLogin));
 }

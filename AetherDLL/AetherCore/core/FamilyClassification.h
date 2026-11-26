@@ -45,20 +45,19 @@ inline bool ProvidesApp(bool configured, bool owned, FamilyKind kind) {
 
 // True when the family answer for `appId` is the stamp AppManifestOwner wrote
 // for the cosmetic banner, not a licence: the app is listed, the banner is on,
-// and the named lender is the configured banner account. Our stamp always names
-// that account, so an answer that names nobody is a real share Aether cannot
-// claim (a Steam Family answer may arrive without a lender).
-//
-// The comparison uses the account configured now: a stamp left by a previously
-// configured banner account reads as a foreign lender, so the app stays a real
-// share (sticky, like any other observed share) until Steam is restarted.
+// the named lender is the configured banner account, and (when known) the banner
+// account is not the active signed-in login.
 inline bool IsOwnBannerStamp(steam::AppId appId, std::uint32_t lenderAccountId, bool bannerEnabled,
-                             const std::vector<std::uint32_t>& listedApps, std::uint64_t bannerSteamId) {
+                             const std::vector<std::uint32_t>& listedApps, std::uint64_t bannerSteamId,
+                             std::uint32_t activeAccountId = 0) {
     if (!bannerEnabled || bannerSteamId == 0 || lenderAccountId == 0)
+        return false;
+    const auto bannerAccount = static_cast<std::uint32_t>(bannerSteamId);
+    if (activeAccountId != 0 && bannerAccount == activeAccountId)
         return false;
     if (std::find(listedApps.begin(), listedApps.end(), appId) == listedApps.end())
         return false;
-    return lenderAccountId == static_cast<std::uint32_t>(bannerSteamId);
+    return lenderAccountId == bannerAccount;
 }
 
 // True when the family answer names a licence Valve granted: a lender that is
@@ -71,7 +70,18 @@ inline bool IsValveFamilyLicense(steam::AppId appId, std::uint32_t lenderAccount
                                  std::uint64_t bannerSteamId) {
     if (lenderAccountId == 0 || lenderAccountId == activeAccountId)
         return false;
-    return !IsOwnBannerStamp(appId, lenderAccountId, bannerEnabled, listedApps, bannerSteamId);
+    return !IsOwnBannerStamp(appId, lenderAccountId, bannerEnabled, listedApps, bannerSteamId, activeAccountId);
+}
+
+// True when a RealShare mark inferred solely from FamilyLenders (`mapDerived`,
+// never observed from Steam's own CheckAppOwnership flags) should be cleared:
+// either FamilyLenders dropped the lender (e.g. a stale banner stamp was
+// removed), or the current config now claims that lender as a cosmetic banner.
+inline bool ShouldClearMapFamilyShare(bool mapDerived, bool bannerFamily, std::uint32_t currentMapLender,
+                                      bool ownBannerNow) {
+    if (!mapDerived || bannerFamily)
+        return false;
+    return currentMapLender == 0 || ownBannerNow;
 }
 
 } // namespace ac::familyclass

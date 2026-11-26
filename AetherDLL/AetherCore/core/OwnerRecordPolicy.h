@@ -78,6 +78,15 @@ struct OwnerPlan {
     bool dropRecord = false; // the (appId -> record) entry is obsolete
 };
 
+// True when the cosmetic owner banner applies to this app for this login.
+// Never stamps the active signed-in account: writing it into LastOwner hides a
+// real Steam Family license as a local install without rendering a foreign
+// banner for the active login.
+inline bool IsActiveBannerOwner(const OwnerContext& c) {
+    return c.bannerEnabled && c.managed && c.listed && c.bannerSteamId != 0 &&
+           (c.activeSteamId == 0 || c.bannerSteamId != c.activeSteamId);
+}
+
 inline OwnerPlan PlanOwnerAction(const OwnerContext& c) {
     OwnerPlan plan;
 
@@ -94,7 +103,7 @@ inline OwnerPlan PlanOwnerAction(const OwnerContext& c) {
         return plan;
 
     // Opt-in cosmetic banner: the only case Aether writes an owner.
-    if (c.bannerEnabled && c.managed && c.listed && c.bannerSteamId != 0) {
+    if (IsActiveBannerOwner(c)) {
         plan.action = OwnerAction::Set;
         plan.owner = c.bannerSteamId;
         return plan;
@@ -166,6 +175,37 @@ inline OwnerRecord RecordAfterWrite(const OwnerRecord& previous, bool hasPreviou
     }
     next.written = written;
     return next;
+}
+
+struct ManifestOwnerEvidence {
+    std::uint32_t manifestLastOwner = 0; // 32-bit account id from appmanifest LastOwner (0 = absent)
+    bool recorded = false;
+    OwnerRecord record{};
+    std::uint32_t activeAccountId = 0;
+    bool ownBannerNow = false;
+};
+
+// Resolves the real lender implied by an appmanifest's LastOwner given
+// owner_state.txt. A stale banner stamp written by Aether for a different
+// configuration must never read as a Valve Steam Family lender; conversely, a
+// pre-Aether lender preserved in `record.original` survives a boot-time strip.
+inline std::uint32_t ResolveEffectiveManifestOwner(const ManifestOwnerEvidence& e) {
+    auto foreign = [active = e.activeAccountId](std::uint64_t id) -> std::uint32_t {
+        if (id == 0)
+            return 0;
+        const auto account = static_cast<std::uint32_t>(id);
+        return account != active ? account : 0;
+    };
+
+    if (!e.recorded || static_cast<std::uint32_t>(e.record.written) != e.manifestLastOwner)
+        return foreign(e.manifestLastOwner);
+
+    if (e.manifestLastOwner != 0 && e.ownBannerNow && e.manifestLastOwner != e.activeAccountId)
+        return e.manifestLastOwner;
+
+    if (e.record.originalKnown)
+        return foreign(e.record.original);
+    return 0;
 }
 
 } // namespace ac::appmanifest
