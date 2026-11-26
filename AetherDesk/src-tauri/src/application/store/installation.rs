@@ -110,7 +110,8 @@ pub(super) async fn install_specific_package(
         &package.manifest_files,
     )?;
 
-    let installed_rows = LuaManifestPins::new(steam_path.to_string(), app_id).rows_from_file()?;
+    let mut installed_rows =
+        LuaManifestPins::new(steam_path.to_string(), app_id).rows_from_file()?;
     if installed_rows.len() != manifest_rows.len() {
         return Err(format!(
             "Lua install verification failed: downloaded file had {} setManifestid entries, installed file has {}.",
@@ -118,6 +119,11 @@ pub(super) async fn install_specific_package(
             installed_rows.len()
         ));
     }
+    crate::steam::appinfo::annotate_manifest_rows(
+        std::path::Path::new(steam_path),
+        app_id,
+        &mut installed_rows,
+    );
     notify_store_change(app, app_id);
     Ok(installed_rows)
 }

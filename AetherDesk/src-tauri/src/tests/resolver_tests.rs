@@ -15,6 +15,7 @@ fn row(depot: u32, gid: &str, enabled: bool) -> LuaManifestRow {
         manifest_id: gid.to_string(),
         enabled,
         issue: None,
+        host_skip: None,
     }
 }
 

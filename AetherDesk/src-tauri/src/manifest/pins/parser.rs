@@ -50,6 +50,7 @@ pub(super) fn parse_pins(content: &str) -> Vec<ParsedPin> {
                 manifest_id,
                 enabled: !setmanifest_commented && addappid_enabled,
                 issue: None,
+                host_skip: None,
             },
             addappid_line,
             addappid_enabled,

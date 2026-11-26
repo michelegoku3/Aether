@@ -87,5 +87,6 @@ fn issue_row(issue: LuaManifestRowIssue) -> LuaManifestRow {
         manifest_id: issue.raw_value.clone(),
         enabled: false,
         issue: Some(issue),
+        host_skip: None,
     }
 }

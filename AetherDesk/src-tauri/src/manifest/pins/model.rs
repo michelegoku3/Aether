@@ -1,3 +1,4 @@
+use crate::steam::appinfo::DepotHostSkip;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -10,6 +11,8 @@ pub struct LuaManifestRow {
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issue: Option<LuaManifestRowIssue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_skip: Option<DepotHostSkip>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -158,6 +158,59 @@ pub fn evaluate_depot_skip(
     None
 }
 
+/// Annotates `rows` in place with host compatibility hints from
+/// `<steam_root>/appcache/appinfo.vdf`. Malformed syntax rows (`issue.is_some()`)
+/// keep `host_skip: None` so repair warnings always take precedence, and an
+/// absent or incomplete `appinfo.vdf` fails open without modifying any row.
+pub fn annotate_manifest_rows(
+    steam_root: &Path,
+    app_id: u32,
+    rows: &mut [crate::manifest::pins::LuaManifestRow],
+) {
+    if rows.is_empty() || app_id == 0 {
+        return;
+    }
+    let configs = read_app_depot_configs(steam_root, app_id);
+    if configs.is_empty() {
+        return;
+    }
+    let host = HostTarget::current();
+    let mut flagged: Vec<String> = Vec::new();
+    for row in rows.iter_mut() {
+        if row.issue.is_some() {
+            row.host_skip = None;
+            continue;
+        }
+        row.host_skip = evaluate_depot_skip(row.app_id, &configs, host);
+        if let Some(skip) = &row.host_skip {
+            flagged.push(format!("{}:{}", row.app_id, skip.label));
+        }
+    }
+    if flagged.is_empty() {
+        crate::desk_log_debug!(
+            "steam",
+            "Host depot hints for {}: all {} row(s) match host ({}, 64bit={}, deck={})",
+            crate::core::logger::format_appid(app_id),
+            rows.len(),
+            host.host_os,
+            host.host_is_64bit,
+            host.host_is_steam_deck
+        );
+    } else {
+        crate::desk_log_info!(
+            "steam",
+            "Host depot hints for {}: {} of {} row(s) marked non-host ({}, 64bit={}, deck={}): [{}]",
+            crate::core::logger::format_appid(app_id),
+            flagged.len(),
+            rows.len(),
+            host.host_os,
+            host.host_is_64bit,
+            host.host_is_steam_deck,
+            flagged.join(", ")
+        );
+    }
+}
+
 /// Reads `<steam_root>/appcache/appinfo.vdf` and returns `depots/<id>/config`
 /// for `target_app_id`. Returns an empty map when the cache is absent, mid-write,
 /// unsupported, or does not contain `target_app_id`.
@@ -567,5 +620,86 @@ mod tests {
         )
         .expect("write");
         assert!(read_app_depot_configs(dir.path(), 294100).is_empty());
+    }
+
+    #[test]
+    fn annotate_manifest_rows_skips_syntax_issue_rows_and_marks_non_host() {
+        use crate::manifest::pins::{LuaManifestRow, LuaManifestRowIssue, ManifestGidProblem};
+
+        let strings = [
+            "appinfo", "depots", "config", "oslist", "osarch", "294101", "294104", "294103",
+        ];
+        let mut rimworld_kv = Vec::new();
+        push_obj(&mut rimworld_kv, 0, |b| {
+            push_obj(b, 1, |b| {
+                push_obj(b, 5, |b| {
+                    push_obj(b, 2, |b| {
+                        push_str(b, 3, "windows");
+                        push_str(b, 4, "32");
+                    });
+                });
+                push_obj(b, 6, |b| {
+                    push_obj(b, 2, |b| {
+                        push_str(b, 3, "windows");
+                        push_str(b, 4, "64");
+                    });
+                });
+                push_obj(b, 7, |b| {
+                    push_obj(b, 2, |b| {
+                        push_str(b, 3, "linux");
+                    });
+                });
+            });
+        });
+        rimworld_kv.push(0x08);
+
+        let blob = build_v29_appinfo(&[(294100, rimworld_kv)], &strings);
+        let dir = tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("appcache")).expect("appcache");
+        std::fs::write(dir.path().join("appcache").join("appinfo.vdf"), blob).expect("write");
+
+        let mut rows = vec![
+            LuaManifestRow {
+                row_id: 1,
+                app_id: 294104,
+                manifest_id: "1".to_string(),
+                enabled: true,
+                issue: None,
+                host_skip: None,
+            },
+            LuaManifestRow {
+                row_id: 2,
+                app_id: 294101,
+                manifest_id: "2".to_string(),
+                enabled: true,
+                issue: None,
+                host_skip: None,
+            },
+            LuaManifestRow {
+                row_id: 3,
+                app_id: 294103,
+                manifest_id: "bad".to_string(),
+                enabled: false,
+                issue: Some(LuaManifestRowIssue {
+                    line: 4,
+                    depot_id: Some(294103),
+                    raw_value: "bad".to_string(),
+                    problem: ManifestGidProblem::NotDecimalUint64,
+                    active: true,
+                }),
+                host_skip: None,
+            },
+        ];
+
+        annotate_manifest_rows(dir.path(), 294100, &mut rows);
+        assert!(rows[0].host_skip.is_none());
+        if cfg!(target_os = "windows") && cfg!(target_pointer_width = "64") {
+            assert_eq!(
+                rows[1].host_skip.as_ref().map(|s| s.reason),
+                Some(DepotHostSkipReason::WrongArch)
+            );
+        }
+        // Syntax issue rows never get host_skip so repair UI keeps priority.
+        assert!(rows[2].host_skip.is_none());
     }
 }

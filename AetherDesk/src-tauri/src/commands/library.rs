@@ -218,8 +218,13 @@ pub fn get_installed_lua_manifest_rows(
     // what the user may be there to fix. Malformed lines come back as rows
     // carrying `issue`, so the editor can mark and repair them; writing is
     // still gated by `validate_content`.
-    let pins = LuaManifestPins::new(steam_path, app_id);
-    let rows = pins.editor_rows_from_file()?;
+    let pins = LuaManifestPins::new(steam_path.clone(), app_id);
+    let mut rows = pins.editor_rows_from_file()?;
+    crate::steam::appinfo::annotate_manifest_rows(
+        std::path::Path::new(&steam_path),
+        app_id,
+        &mut rows,
+    );
     if let Some(issue) = rows.iter().find_map(|row| row.issue.as_ref()) {
         crate::desk_log_warn!(
             "library",
@@ -435,7 +440,7 @@ pub async fn apply_specific_version_edits(
     );
 
     let pins_editor = LuaManifestPins::new(steam_path.clone(), app_id);
-    let (next_lua, rows) = pins_editor.preview_edits(&edits)?;
+    let (next_lua, mut rows) = pins_editor.preview_edits(&edits)?;
     let pins: Vec<DepotManifestPin> =
         pins_from_rows(LuaManifestPins::rows_for_manifest_sync(&next_lua));
 
@@ -498,6 +503,11 @@ pub async fn apply_specific_version_edits(
         &app,
         crate::core::library_events::LibraryChangeOrigin::LibraryAction,
         [app_id],
+    );
+    crate::steam::appinfo::annotate_manifest_rows(
+        std::path::Path::new(&steam_path),
+        app_id,
+        &mut rows,
     );
     crate::desk_log_info!(
         "library",

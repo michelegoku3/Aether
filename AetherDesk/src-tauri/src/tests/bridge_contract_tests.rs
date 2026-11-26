@@ -107,12 +107,15 @@ fn test_hubcap_generation_usage_serialization() {
 
 #[test]
 fn test_lua_manifest_row_camel_case_contract() {
+    use crate::steam::appinfo::{DepotHostSkip, DepotHostSkipReason};
+
     let row = LuaManifestRow {
         row_id: 1,
         app_id: 12345,
         manifest_id: "987654321012345678".to_string(),
         enabled: true,
         issue: None,
+        host_skip: None,
     };
 
     let serialized = serde_json::to_value(&row).expect("serialize LuaManifestRow");
@@ -125,6 +128,31 @@ fn test_lua_manifest_row_camel_case_contract() {
     );
     assert_eq!(serialized.get("enabled"), Some(&Value::Bool(true)));
     assert!(serialized.get("issue").is_none());
+    assert!(serialized.get("hostSkip").is_none());
+
+    let skipped_row = LuaManifestRow {
+        host_skip: Some(DepotHostSkip {
+            reason: DepotHostSkipReason::WrongArch,
+            label: "32-bit".to_string(),
+            detail: "Targets 32-bit Windows".to_string(),
+        }),
+        ..row
+    };
+    let skipped_json = serde_json::to_value(&skipped_row).expect("serialize hostSkip");
+    assert_eq!(
+        skipped_json
+            .get("hostSkip")
+            .and_then(|v| v.get("reason"))
+            .and_then(Value::as_str),
+        Some("wrongArch")
+    );
+    assert_eq!(
+        skipped_json
+            .get("hostSkip")
+            .and_then(|v| v.get("label"))
+            .and_then(Value::as_str),
+        Some("32-bit")
+    );
 }
 
 // The FE <-> BE contract is verified against the real sources in
