@@ -40,6 +40,20 @@ std::uint64_t PublicDepotSize(steam::AppId appId, steam::AppId depotId);
 // carry it.
 std::uint64_t PublicDepotGid(steam::AppId appId, steam::AppId depotId);
 
+// AppInfo `depots/<id>/config/*` fields used to decide whether `depotId`
+// applies to this host. Empty strings mean the key was absent or unreadable.
+struct DepotHostFields {
+    std::string osList;
+    std::string osArch;
+    std::string steamDeck;
+    std::string language;
+};
+
+// Reads the host-filter fields (`oslist`, `osarch`, `steamdeck`, `language`)
+// from AppInfo for `depotId` under `appId`. Missing or faulted probes leave
+// fields empty so missing AppInfo never drops content.
+DepotHostFields ReadDepotHostFields(steam::AppId appId, steam::AppId depotId);
+
 // True when the AppInfo's `depots/<id>/config/oslist` lets `depotId` run on this
 // client's platform. A `.lua` lists every depot the store has, so a depot that
 // names only another platform is content Steam must not plan here: two

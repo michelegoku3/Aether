@@ -78,6 +78,39 @@ std::int64_t ProbeAppInfoGuarded(void* cache, steam::AppId appId, const char* ke
 }
 #endif
 
+std::int64_t ProbeAppInfoRaw(steam::AppId appId, const char* key, char* buf, std::size_t bufSize) {
+    void* cache = g_state.gameName.appInfoCacheObj.load();
+    if (!cache || !o_GetAppDataFromAppInfo || appId == 0 || !key || !buf || bufSize == 0)
+        return 0;
+#if defined(_MSC_VER)
+    return ProbeAppInfoGuarded(cache, appId, key, reinterpret_cast<std::uint8_t*>(buf),
+                               static_cast<std::int32_t>(bufSize));
+#else
+    return o_GetAppDataFromAppInfo(cache, appId, key, reinterpret_cast<std::uint8_t*>(buf),
+                                   static_cast<std::int32_t>(bufSize));
+#endif
+}
+
+std::string ReadAppInfoString(steam::AppId appId, const char* key) {
+    char buf[128] = {};
+    const std::int64_t len = ProbeAppInfoRaw(appId, key, buf, sizeof(buf));
+    if (len <= 1)
+        return {};
+    const std::size_t maxChars = sizeof(buf) - 1;
+    std::size_t count = std::min(static_cast<std::size_t>(len - 1), maxChars);
+    while (count > 0 && buf[count - 1] == '\0')
+        --count;
+    return std::string(buf, count);
+}
+
+std::string ReadDepotConfigField(steam::AppId appId, steam::AppId depotId, const char* field) {
+    if (appId == 0 || depotId == 0 || !Ready() || !field)
+        return {};
+    char key[80] = {};
+    _snprintf_s(key, sizeof(key), _TRUNCATE, "depots/%u/config/%s", depotId, field);
+    return ReadAppInfoString(appId, key);
+}
+
 } // namespace
 
 void Init(HMODULE steamclient) {
@@ -192,6 +225,17 @@ std::uint64_t PublicDepotGid(steam::AppId appId, steam::AppId depotId) {
     return ac::hooks::steamclient::policy::ParseSize(buf, static_cast<std::size_t>(len));
 }
 
+DepotHostFields ReadDepotHostFields(steam::AppId appId, steam::AppId depotId) {
+    DepotHostFields fields;
+    if (appId == 0 || depotId == 0 || !Ready())
+        return fields;
+    fields.osList = ReadDepotConfigField(appId, depotId, "oslist");
+    fields.osArch = ReadDepotConfigField(appId, depotId, "osarch");
+    fields.steamDeck = ReadDepotConfigField(appId, depotId, "steamdeck");
+    fields.language = ReadDepotConfigField(appId, depotId, "language");
+    return fields;
+}
+
 bool DepotAppliesToHostOs(steam::AppId appId, steam::AppId depotId) {
     if (appId == 0 || depotId == 0 || !Ready())
         return true;
@@ -199,23 +243,11 @@ bool DepotAppliesToHostOs(steam::AppId appId, steam::AppId depotId) {
     // A depot's AppInfo entry names the platforms it runs on. A `.lua` lists
     // every depot the store has, and two platforms can declare the same file
     // path, so the plan must keep only what this client can run.
-    char key[64] = {};
-    _snprintf_s(key, sizeof(key), _TRUNCATE, "depots/%u/config/oslist", depotId);
-    char buf[64] = {};
-#if defined(_MSC_VER)
-    const std::int64_t len =
-        ProbeAppInfoGuarded(g_state.gameName.appInfoCacheObj.load(), appId, key, reinterpret_cast<std::uint8_t*>(buf),
-                            static_cast<std::int32_t>(sizeof(buf)));
-#else
-    const std::int64_t len =
-        o_GetAppDataFromAppInfo(g_state.gameName.appInfoCacheObj.load(), appId, key,
-                                reinterpret_cast<std::uint8_t*>(buf), static_cast<std::int32_t>(sizeof(buf)));
-#endif
+    const std::string list = ReadDepotConfigField(appId, depotId, "oslist");
     // A missing key, an empty value or a faulted probe proves no restriction:
     // a depot is never dropped on missing evidence.
-    if (len <= 1)
+    if (list.empty())
         return true;
-    const std::string_view list(buf, static_cast<std::size_t>(len - 1));
     return ac::hooks::steamclient::policy::OsListAllowsHost(list, kHostOsList);
 }
 
