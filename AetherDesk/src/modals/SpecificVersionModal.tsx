@@ -85,8 +85,8 @@ const NonHostDepotConfirmModal = ({
   >
     <p className="uninstall-modal-lead">Depot {row.appId} is not used on this PC.</p>
     <p className="uninstall-modal-copy">
-      {row.hostSkip?.detail ?? 'Steam and AetherDLL skip this depot on this system.'} Editing its manifest ID or toggle
-      is normally unnecessary.
+      {row.hostSkip?.detail ?? 'Steam and AetherDLL skip this depot on this system.'} Editing its manifest ID or its
+      toggle is normally unnecessary.
     </p>
     <div className="uninstall-modal-actions">
       <button type="button" className="uninstall-btn uninstall-btn-primary" onClick={onConfirm}>
