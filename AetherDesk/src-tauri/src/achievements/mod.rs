@@ -5,3 +5,5 @@
 //! under `<AetherData>/backup/<appid>/achievements/`.
 
 pub mod kv1;
+pub mod schema;
+pub mod state;
