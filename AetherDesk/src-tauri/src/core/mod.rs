@@ -8,6 +8,7 @@ pub mod custom_css;
 pub mod hubcap_update_monitor;
 pub mod library_banner_config;
 pub mod library_events;
+pub mod library_removal;
 pub mod logger;
 pub mod manifest_restore_config;
 pub mod migration;

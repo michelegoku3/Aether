@@ -371,35 +371,28 @@ pub fn remove_lua_game_from_library(app: tauri::AppHandle, app_id: u32) -> Resul
         steam_path
     );
 
-    // `command_steam_path` above already strict-validated and normalized the
-    // path; the scanner normalizes again, so the value is safe to pass.
-    let scanner = SteamLibraryScanner::new(steam_path.clone());
-    if scanner.is_app_installed(app_id) {
-        crate::desk_log_warn!(
-            "library",
-            "Cannot remove {}: game is currently installed in Steam",
-            crate::core::logger::format_appid(app_id)
-        );
-        return Err("This game is installed in Steam. Remove is allowed only for Lua-only games that are not installed.".to_string());
-    }
+    // Archive through the game's backup tree so the deleted Lua stays
+    // restorable. A backup failure must not block the removal: the file is
+    // still deleted and the copy is best-effort.
+    let backup = match crate::core::backup::GameBackup::for_app(app_id) {
+        Ok(backup) => Some(backup),
+        Err(error) => {
+            crate::desk_log_warn!(
+                "library",
+                "No backup tree for {}; removing its Lua without an archive: {}",
+                crate::core::logger::format_appid(app_id),
+                error
+            );
+            None
+        }
+    };
+    let report = crate::core::library_removal::remove_lua_from_library(
+        &steam_path,
+        app_id,
+        backup.as_ref(),
+    )?;
 
-    let plugin_dir = std::path::PathBuf::from(steam_path)
-        .join("config")
-        .join("stplug-in");
-    let lua_path = plugin_dir.join(format!("{}.lua", app_id));
-    let backup_path = plugin_dir.join(format!("{}.lua.bak", app_id));
-
-    let mut removed = false;
-    if lua_path.exists() {
-        std::fs::remove_file(&lua_path)
-            .map_err(|e| format!("Failed to remove Lua file {}: {}", lua_path.display(), e))?;
-        removed = true;
-    }
-    if backup_path.exists() {
-        let _ = std::fs::remove_file(&backup_path);
-    }
-
-    if removed {
+    if report.lua_removed {
         crate::desk_log_info!(
             "library",
             "Successfully removed Lua files for {} from stplug-in",
