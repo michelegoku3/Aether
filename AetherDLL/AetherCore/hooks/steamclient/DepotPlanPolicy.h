@@ -137,6 +137,106 @@ constexpr bool OsListAllowsHost(std::string_view osList, std::string_view host) 
     return false;
 }
 
+constexpr std::string_view TrimAsciiView(std::string_view text) noexcept {
+    std::size_t begin = 0;
+    std::size_t end = text.size();
+    while (begin < end && (text[begin] == ' ' || text[begin] == '\t' || text[begin] == '\r' || text[begin] == '\n')) {
+        ++begin;
+    }
+    while (end > begin &&
+           (text[end - 1] == ' ' || text[end - 1] == '\t' || text[end - 1] == '\r' || text[end - 1] == '\n')) {
+        --end;
+    }
+    return text.substr(begin, end - begin);
+}
+
+constexpr bool EqualsAsciiIgnoreCase(std::string_view a, std::string_view b) noexcept {
+    if (a.size() != b.size())
+        return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (FoldAscii(a[i]) != FoldAscii(b[i]))
+            return false;
+    }
+    return true;
+}
+
+constexpr bool IsTruthyConfigFlag(std::string_view value) noexcept {
+    const std::string_view trimmed = TrimAsciiView(value);
+    return trimmed == "1" || EqualsAsciiIgnoreCase(trimmed, "true") || EqualsAsciiIgnoreCase(trimmed, "yes");
+}
+
+constexpr bool Is64BitArch(std::string_view osArch) noexcept { return TrimAsciiView(osArch) == "64"; }
+
+constexpr bool Is32BitArch(std::string_view osArch) noexcept { return TrimAsciiView(osArch) == "32"; }
+
+// AppInfo config attributes for one depot (`depots/<id>/config/*`). Absent or
+// unreadable keys stay empty and never restrict a depot on missing evidence.
+struct DepotHostConfig {
+    std::string_view osList;
+    std::string_view osArch;
+    std::string_view steamDeck;
+    std::string_view language;
+};
+
+// Host and plan-pass context used to decide whether a candidate depot belongs
+// in the plan on this machine.
+struct HostFilterContext {
+    std::string_view hostOs = "windows";
+    bool hostIs64Bit = true;
+    bool hostIsSteamDeck = false;
+    // True when at least one depot in Steam's already-planned rows or in the
+    // candidate refill rows declares `osarch="64"`. A 32-bit-only legacy app
+    // has no 64-bit sibling, so its "32" depot stays valid on x64 Windows.
+    bool has64BitDepot = false;
+    // True when Steam already returned >= 1 own row for a not-installed app:
+    // Steam already selected the client's configured language depot, so extra
+    // `config/language` depots in the `.lua` must not be forced in.
+    bool dropUnplannedLanguageDepots = false;
+};
+
+enum class DepotRejectReason {
+    Keep,
+    WrongOs,
+    WrongArch,
+    SteamDeckOnly,
+    UnplannedLanguage,
+};
+
+constexpr const char* DepotRejectReasonText(DepotRejectReason reason) noexcept {
+    switch (reason) {
+    case DepotRejectReason::Keep:
+        return "keep";
+    case DepotRejectReason::WrongOs:
+        return "wrong_os";
+    case DepotRejectReason::WrongArch:
+        return "wrong_arch";
+    case DepotRejectReason::SteamDeckOnly:
+        return "steamdeck_only";
+    case DepotRejectReason::UnplannedLanguage:
+        return "unplanned_language";
+    }
+    return "unknown";
+}
+
+// Evaluates whether a candidate depot applies to this host given its AppInfo
+// config and the surrounding plan context.
+constexpr DepotRejectReason CheckDepotEligibility(const DepotHostConfig& depot,
+                                                  const HostFilterContext& host) noexcept {
+    if (!OsListAllowsHost(depot.osList, host.hostOs))
+        return DepotRejectReason::WrongOs;
+    if (!host.hostIsSteamDeck && IsTruthyConfigFlag(depot.steamDeck))
+        return DepotRejectReason::SteamDeckOnly;
+    if (host.hostIs64Bit) {
+        if (host.has64BitDepot && Is32BitArch(depot.osArch))
+            return DepotRejectReason::WrongArch;
+    } else if (Is64BitArch(depot.osArch)) {
+        return DepotRejectReason::WrongArch;
+    }
+    if (host.dropUnplannedLanguageDepots && !TrimAsciiView(depot.language).empty())
+        return DepotRejectReason::UnplannedLanguage;
+    return DepotRejectReason::Keep;
+}
+
 // Whether a pinned depot Steam answered with as an installed-only row has to
 // become a target row.
 //

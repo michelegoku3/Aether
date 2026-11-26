@@ -282,6 +282,13 @@ void RowSizePrefersThePinThenAppInfo() {
 // rows this client can run. These cases pin the list parsing, including the
 // absent key, which must never remove content.
 
+using ac::hooks::steamclient::policy::CheckDepotEligibility;
+using ac::hooks::steamclient::policy::DepotHostConfig;
+using ac::hooks::steamclient::policy::DepotRejectReason;
+using ac::hooks::steamclient::policy::DepotRejectReasonText;
+using ac::hooks::steamclient::policy::HostFilterContext;
+using ac::hooks::steamclient::policy::Is32BitArch;
+using ac::hooks::steamclient::policy::Is64BitArch;
 using ac::hooks::steamclient::policy::OsListAllowsHost;
 
 void KeepsADepotThatRunsHere() { CHECK(OsListAllowsHost("windows", "windows")); }
@@ -305,6 +312,62 @@ void TreatsAnAbsentListAsUnrestricted() { CHECK(OsListAllowsHost("", "windows"))
 void MatchesWholeTokensOnly() {
     CHECK(!OsListAllowsHost("windowsx", "windows"));
     CHECK(!OsListAllowsHost("notwindows", "windows"));
+}
+
+void Drops32BitDepotWhen64BitSiblingExists() {
+    HostFilterContext ctx;
+    ctx.hostIs64Bit = true;
+    ctx.has64BitDepot = true;
+    CHECK(Is64BitArch(" 64 "));
+    CHECK(Is32BitArch("32"));
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "64", "", ""}, ctx) == DepotRejectReason::Keep);
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "32", "", ""}, ctx) == DepotRejectReason::WrongArch);
+    CHECK(std::string_view(DepotRejectReasonText(DepotRejectReason::WrongArch)) == "wrong_arch");
+}
+
+void Keeps32BitDepotWhenNo64BitSiblingExists() {
+    HostFilterContext ctx;
+    ctx.hostIs64Bit = true;
+    ctx.has64BitDepot = false;
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "32", "", ""}, ctx) == DepotRejectReason::Keep);
+}
+
+void Drops64BitDepotOn32BitHost() {
+    HostFilterContext ctx;
+    ctx.hostIs64Bit = false;
+    ctx.has64BitDepot = true;
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "64", "", ""}, ctx) == DepotRejectReason::WrongArch);
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "32", "", ""}, ctx) == DepotRejectReason::Keep);
+}
+
+void DropsSteamDeckOnlyDepotOnDesktop() {
+    HostFilterContext ctx;
+    ctx.hostIsSteamDeck = false;
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "64", "1", ""}, ctx) == DepotRejectReason::SteamDeckOnly);
+    CHECK(CheckDepotEligibility(DepotHostConfig{"", "", "true", ""}, ctx) == DepotRejectReason::SteamDeckOnly);
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "64", "0", ""}, ctx) == DepotRejectReason::Keep);
+
+    ctx.hostIsSteamDeck = true;
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "64", "1", ""}, ctx) == DepotRejectReason::Keep);
+}
+
+void DropsUnplannedLanguageDepotOnlyWhenRequested() {
+    HostFilterContext ctx;
+    ctx.dropUnplannedLanguageDepots = true;
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "64", "", "french"}, ctx) ==
+          DepotRejectReason::UnplannedLanguage);
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "64", "", "   "}, ctx) == DepotRejectReason::Keep);
+
+    ctx.dropUnplannedLanguageDepots = false;
+    CHECK(CheckDepotEligibility(DepotHostConfig{"windows", "64", "", "french"}, ctx) == DepotRejectReason::Keep);
+}
+
+void MissingAppInfoFieldsStayFailOpen() {
+    HostFilterContext ctx;
+    ctx.hostIs64Bit = true;
+    ctx.has64BitDepot = true;
+    ctx.dropUnplannedLanguageDepots = true;
+    CHECK(CheckDepotEligibility(DepotHostConfig{}, ctx) == DepotRejectReason::Keep);
 }
 
 // --- Public target for an unpinned depot -----------------------------------
@@ -389,6 +452,12 @@ void DepotPlanTest() {
     IgnoresCase();
     TreatsAnAbsentListAsUnrestricted();
     MatchesWholeTokensOnly();
+    Drops32BitDepotWhen64BitSiblingExists();
+    Keeps32BitDepotWhenNo64BitSiblingExists();
+    Drops64BitDepotOn32BitHost();
+    DropsSteamDeckOnlyDepotOnDesktop();
+    DropsUnplannedLanguageDepotOnlyWhenRequested();
+    MissingAppInfoFieldsStayFailOpen();
     LeavesARealFamilyShareToSteam();
     PlansAnUnpinnedInstalledOnlyRowAtThePublicBuild();
     LeavesAPinnedRowAlone();
