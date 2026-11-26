@@ -1,5 +1,65 @@
 # Changelog
 
+## AetherDesk V1.5.2
+
+### Library and Lua scripts
+
+- The Backup sidebar entry and the ADD DLCs button on Home are clickable and open a
+  popup that explains their current state and the next step.
+- Removing a Lua from the Aether library removes the game from Steam without a restart.
+- The `.lua` of installed games can now be removed, to unlock DLC on legitimately owned
+  games or to disable a broken family share.
+
+### Family banner
+
+- The Family Banner no longer offers the local account as the owner, and the race
+  condition that displayed BORROW is fixed.
+
+### Steam lifecycle
+
+- Fixed a crash at Steam startup when Steam was restarted through AetherDesk.
+- Fixed a restart that ran while some Steam processes were still alive and left the
+  client in a broken state.
+- Closing and restarting Steam now covers every Steam process (including
+  `steamwebhelper`) and the running games; when Steam does not close, AetherDesk reports
+  it instead of continuing.
+- Added a **Close Steam?** popup: install, uninstall and reset ask for confirmation and,
+  once accepted, also close the running games.
+- A game that does not close is reported by name instead of being left running.
+
+### Updates and the updater
+
+- The updater detects and installs updates faster and shows a progress bar.
+- Safeguards cover an update that arrives corrupt for any reason: a failed update
+  restores the previous version and relaunches it.
+- The progress bar covers every phase (download, extraction, swap, relaunch), and the
+  live phases are shown in the AETHER panel with percentage and elapsed seconds.
+- The download is streamed with a percentage, rejects server error pages, refuses a
+  second concurrent update, and uses network timeouts so it cannot hang.
+- The AetherDesk and AetherDLL update checks share one release list, so startup performs
+  one lookup.
+
+### Steam and Hubcap
+
+- AetherDesk warns when the Hubcap key has expired.
+
+### Diagnostics
+
+- Added logs in previously dark parts of the code to make diagnostics easier.
+
+### Files and tools
+
+- File handling was reworked on several paths so truncation and corruption are avoided.
+- Fixed a bug that prevented Steamless from being applied to some games.
+
+### UI
+
+- Minor UI/UX improvements across the app.
+
+### Build
+
+- Frontend dependencies updated and the reported vulnerabilities resolved.
+
 ## AetherDesk V1.5.1
 
 ### Settings, appearance and themes
@@ -301,6 +361,72 @@
 - Legacy compatibility dropped: Roaming/ProgramFiles and old-settings adoption,
   legacy wallpaper and `aether.ico` paths, `-aetheronline`/`-showonline` launch
   options, and the `dwmapi.dll` proxy bookkeeping in the DLL installer.
+
+## AetherDLL V1.0.2
+
+### Steam compatibility
+
+- Game installs are adapted to the way Steam now works.
+- Game updates are adapted to the way Steam now works.
+- Version changes are adapted to the way Steam now works.
+- Game versions for another operating system are filtered out.
+
+### Games, versions and depots
+
+- Cards for games whose pinned build is not installed offer UPDATE, and a pin change
+  rechecks the game without restarting Steam.
+- The depot plan is rebuilt from Steam's appmanifest, and unpinned depots return to the
+  public version once the pin is released.
+- Aether no longer writes `buildid` into the appmanifest: the ACF editor is read-only
+  and repairs `InstalledDepots` only, so Steam's files are not rewritten by hand.
+- A truncated appmanifest, or one belonging to another app, is ignored instead of being
+  repaired at random.
+- Apps enter the library through the licence only, no longer through the
+  subscribed-games list.
+- Cards of removed games return on their own when the Lua is added again, without
+  restarting Steam.
+
+### Achievements
+
+- Achievements are adapted to Steam's new standard and grouped by base game, DLCs and
+  multiplayer.
+- Achievement coverage now spans more games and is more resilient.
+- Achievements are served entirely by Aether: locked ones are visible too, with a
+  correct progress bar.
+- The achievement schema is generated locally, so the overlay lists achievements for
+  games where Steam does not provide one.
+- When Steam wipes the statistics cache, Aether restores it from the backup so unlocks
+  and dates are kept.
+- Fixed achievements being invisible when the unlocked entries were too small.
+
+### Ownership and Family Share
+
+- The family share bypass, now patched by Steam, is removed: no logouts and no loss of
+  access to owned games.
+- Family-shared games are classified more accurately.
+
+### Patterns and injection
+
+- Published patterns can be updated with fixes without any action from the user.
+- Cached patterns are loaded at startup, so Aether does not wait on the network to be
+  operational.
+- DLL hooking is simplified and the startup sequence standardised, reducing crashes and
+  games that do not appear.
+- Game injection changed to reduce breakage when Steam changes its patterns.
+- Licence and package 0 operations run on Steam's main thread, avoiding internal
+  corruption of the client.
+
+### Diagnostics and warnings
+
+- Added logs in previously dark parts of the code to make diagnostics easier.
+- `status.json` reports counts of owned, spoofed and family-shared games and the state
+  of the rechecks.
+- AetherDLL warns when the Hubcap key has expired.
+- AetherDLL warns when the client is on the Steam beta, which Aether does not support.
+
+### Fixes
+
+- Fixed several bugs that crashed the new Steam version after Valve's changes.
 
 ## AetherDLL V1.0.1
 
