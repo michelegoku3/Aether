@@ -283,7 +283,7 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
                     .filter(Boolean)
                     .join(' ')}
                 >
-                  <td className="version-appid" title={isNonHost ? row.hostSkip?.detail : undefined}>
+                  <td className="version-appid">
                     <span className="version-appid-value">{row.appId}</span>
                     {isNonHost && row.hostSkip && <span className="version-host-badge">{row.hostSkip.label}</span>}
                   </td>
@@ -302,7 +302,6 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
                       readOnly={isHostLocked}
                       disabled={isApplying || (!row.enabled && !row.issue && !isHostLocked)}
                       aria-invalid={severity === 'invalid'}
-                      title={isHostLocked ? row.hostSkip?.detail : undefined}
                       onClick={() => {
                         if (isHostLocked) setPendingUnlockRow(row);
                       }}
@@ -329,7 +328,6 @@ export const ManualVersionEditor = ({ game, initialRows, onClose }: ManualVersio
                       className={['version-switch', isHostLocked ? 'version-switch--nonhost-locked' : '']
                         .filter(Boolean)
                         .join(' ')}
-                      title={isHostLocked ? row.hostSkip?.detail : undefined}
                       tabIndex={!isApplying && isHostLocked ? 0 : undefined}
                       onClick={() => {
                         if (!isApplying && isHostLocked) setPendingUnlockRow(row);
