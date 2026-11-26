@@ -99,9 +99,15 @@ export const SettingsLibrarySection: React.FC<SettingsLibrarySectionProps> = ({
               accountsLoaded &&
               accounts.length === 0 && (
                 <p className="settings-desc">
-                  No local Steam accounts found. Sign in to Steam once with the account you want to show.
+                  No other local Steam accounts found. Sign in to Steam once with another account you want to show.
                 </p>
               )
+            )}
+            {!accountsError && accountsLoaded && steamId && !knownSelection && (
+              <p className="settings-desc">
+                The selected account matches the current login or is missing from loginusers.vdf; pick another account
+                to show the banner here.
+              </p>
             )}
             <p className="settings-note">
               Selected games will be shown as games from another library, a Steam restart is required to make it appear.

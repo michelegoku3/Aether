@@ -106,8 +106,13 @@ describe('SettingsLibrarySection', () => {
     );
 
     const empty = render(<SettingsLibrarySection {...baseProps()} enabled accounts={[]} />);
-    expect(empty.container.textContent).toContain('No local Steam accounts found');
+    expect(empty.container.textContent).toContain('No other local Steam accounts found');
     expect(empty.container.querySelector('.settings-error')).toBeNull();
+  });
+
+  it('explains when a saved owner matches the active login or is missing from accounts', () => {
+    const { container } = render(<SettingsLibrarySection {...baseProps()} enabled steamId="76561199841844794" />);
+    expect(container.textContent).toContain('matches the current login or is missing');
   });
 
   it('does not repeat the removed owner description', () => {
