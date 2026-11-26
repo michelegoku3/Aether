@@ -57,12 +57,12 @@ describe('LibraryGameActionsModal install state', () => {
     queryGameStateMock.mockReset();
   });
 
-  it('enables ONLINE from the live list when Steam finished after the card was opened', () => {
+  it('enables ONLINE and Remove from the live list when Steam finished after the card was opened', () => {
     // The card was clicked while the game was still downloading.
     renderModal(game(100), [game(100, { installed: true, gamePath: 'C:\\Steam\\Game100' })]);
 
     expect(onlineButton()).toBeEnabled();
-    expect(removeButton()).toBeDisabled();
+    expect(removeButton()).toBeEnabled();
   });
 
   it('keeps ONLINE and Remove unavailable while Steam is still installing', () => {
@@ -72,11 +72,54 @@ describe('LibraryGameActionsModal install state', () => {
     expect(removeButton()).toBeDisabled();
   });
 
-  it('offers Remove only for a game Steam does not hold at all', () => {
+  it('offers Remove for a game Steam does not hold at all', () => {
     renderModal(game(100), [game(100)]);
 
     expect(onlineButton()).toBeDisabled();
     expect(removeButton()).toBeEnabled();
+  });
+});
+
+describe('Remove flow', () => {
+  const OWNERSHIP_WARNING = /If you don't legitimately own this game/;
+
+  beforeEach(() => {
+    queryGameStateMock.mockResolvedValue(false);
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'remove_lua_game_from_library') {
+        return 'App ID 100 removed from Aether library.';
+      }
+      return undefined;
+    });
+  });
+
+  it('confirms with the ownership warning before removing an installed game', async () => {
+    const onStatus = renderModal(game(100, { installed: true }), [game(100, { installed: true })]);
+    const user = userEvent.setup();
+
+    await user.click(removeButton());
+
+    await screen.findByText(OWNERSHIP_WARNING);
+    expect(invokeMock).not.toHaveBeenCalledWith('remove_lua_game_from_library', expect.anything());
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(invokeMock).not.toHaveBeenCalledWith('remove_lua_game_from_library', expect.anything());
+
+    await user.click(removeButton());
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('remove_lua_game_from_library', { appId: 100 }));
+    await waitFor(() => expect(onStatus).toHaveBeenCalledWith('App ID 100 removed from Aether library.', 'success'));
+  });
+
+  it('removes a Lua-only game without a popup', async () => {
+    renderModal(game(100), [game(100)]);
+    const user = userEvent.setup();
+
+    await user.click(removeButton());
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('remove_lua_game_from_library', { appId: 100 }));
+    expect(screen.queryByText(OWNERSHIP_WARNING)).not.toBeInTheDocument();
   });
 });
 

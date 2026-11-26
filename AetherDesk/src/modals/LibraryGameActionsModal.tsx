@@ -48,6 +48,18 @@ interface GameManifestSyncReport {
 }
 
 /**
+ * Confirmation body for removing an installed game's Lua.
+ *
+ * The Lua is the DLL's ownership/depot trigger, not the game's install: a
+ * legitimate owner who used it for DLC goes back to the base game, while an
+ * unowned install loses access to the content Steam already downloaded.
+ */
+const removeLuaWarning = (name: string) =>
+  `This deletes the Lua for ${name} from Steam's stplug-in folder.\n\n` +
+  "If you don't legitimately own this game on Steam, it will show as PURCHASE and can no longer be launched or updated until the Lua is installed again. If you own it, the game keeps working, but any DLC the Lua unlocked will show as PURCHASE.\n\n" +
+  'You can install the Lua again later from the Store.\n\nContinue?';
+
+/**
  * Human-readable one-liner for the per-game repair report, with its severity.
  *
  * A Lua that cannot load is a failure of the repair, not a success: it is
@@ -194,12 +206,16 @@ export const LibraryGameActionsModal = ({
   const [cleanConfirm, setCleanConfirm] = useState<string | null>(null);
   const [cleanWarning, setCleanWarning] = useState<string | null>(null);
   const [cleanBusy, setCleanBusy] = useState(false);
+  // Installed games get the ownership warning before their Lua is deleted;
+  // Lua-only games (nothing on disk to break) remove immediately.
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const disabled = isProcessing || isBusy || onlineBusy;
-  // An open child popup (online choice / UCO2 panel / cleanup) disables THIS
-  // popup's dismiss: ESC and outside clicks close only the topmost child in the
-  // Modify → Online → UCO2 chain, which steps down one level at a time
-  // without ever closing everything.
-  const childPopupOpen = showOnlineChoice || showOnlinePanel || cleanConfirm !== null || cleanWarning !== null;
+  // An open child popup (online choice / UCO2 panel / cleanup / remove
+  // confirm) disables THIS popup's dismiss: ESC and outside clicks close only
+  // the topmost child in the Modify → Online → UCO2 chain, which steps down one
+  // level at a time without ever closing everything.
+  const childPopupOpen =
+    showOnlineChoice || showOnlinePanel || cleanConfirm !== null || cleanWarning !== null || showRemoveConfirm;
 
   const refreshUpdateState = async () => {
     try {
@@ -281,12 +297,7 @@ export const LibraryGameActionsModal = ({
     }
   };
 
-  const handleRemove = async () => {
-    if (liveInstalled || liveInstalling) {
-      onStatus('Remove is available only for games that are not installed in Steam.', 'error');
-      return;
-    }
-
+  const performRemove = async () => {
     setIsBusy(true);
     try {
       onStatus('Removing Lua from Aether library...', 'info');
@@ -294,13 +305,23 @@ export const LibraryGameActionsModal = ({
         appId: Number(game.appId),
       });
       onStatus(result, 'success');
+      setShowRemoveConfirm(false);
       onClose();
       onRefresh();
     } catch (err: unknown) {
+      setShowRemoveConfirm(false);
       onStatus(`Failed to remove game from library: ${toErrorMessage(err)}`, 'error');
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const requestRemove = () => {
+    if (liveInstalled) {
+      setShowRemoveConfirm(true);
+      return;
+    }
+    void performRemove();
   };
 
   // Read-only: the ONLINE popup reports the presence settings the game already
@@ -496,15 +517,15 @@ export const LibraryGameActionsModal = ({
               <span
                 className="game-action-btn-wrap"
                 title={
-                  liveInstalled || liveInstalling
-                    ? 'Installed games cannot be removed from Aether Library'
+                  liveInstalling
+                    ? 'Steam is still writing this game; wait for the download to finish'
                     : 'Remove Lua from Aether Library'
                 }
               >
                 <button
                   className="game-action-btn danger"
-                  onClick={handleRemove}
-                  disabled={disabled || liveInstalled || liveInstalling}
+                  onClick={requestRemove}
+                  disabled={disabled || liveInstalling}
                 >
                   Remove
                 </button>
@@ -575,6 +596,16 @@ export const LibraryGameActionsModal = ({
       )}
       {cleanWarning && (
         <CleanupModal mode="warning" title="Files removed" text={cleanWarning} onClose={() => setCleanWarning(null)} />
+      )}
+      {showRemoveConfirm && (
+        <CleanupModal
+          mode="confirm"
+          title="Remove Lua from Aether Library?"
+          text={removeLuaWarning(game.name)}
+          busy={isBusy}
+          onConfirm={() => void performRemove()}
+          onClose={() => setShowRemoveConfirm(false)}
+        />
       )}
     </div>
   );

@@ -39,8 +39,8 @@ impl InstalledSteamGame {
     /// True when Steam holds an `appmanifest` for this App ID: the content is
     /// complete, still being written, or neither (a cancelled first download).
     ///
-    /// This is "Steam knows this app and its real install folder" — the same
-    /// meaning as [`SteamLibraryScanner::is_app_installed`] — and it is what
+    /// This is "Steam knows this app and its real install folder" — the
+    /// meaning the Library's install scan derives from the ACF — and it is what
     /// callers that only need the folder need, never `installed` alone.
     pub fn has_appmanifest(&self) -> bool {
         self.manifest_present
@@ -207,11 +207,6 @@ impl SteamLibraryScanner {
 
         games.sort_by_key(|a| a.name.to_lowercase());
         games
-    }
-
-    pub fn is_app_installed(&self, app_id: u32) -> bool {
-        let libraries = self.discover_libraries();
-        self.scan_appmanifests(&libraries).contains_key(&app_id)
     }
 
     /// App ID -> install projection for every ACF the scanner accepts.
