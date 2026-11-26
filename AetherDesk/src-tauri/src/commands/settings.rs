@@ -23,17 +23,33 @@ pub fn get_settings_health(
     Ok(SettingsManager::new(&app).load_reported().1)
 }
 
-/// Local Steam accounts remembered in `loginusers.vdf`, for the cosmetic
-/// library-owner picker (persona shown in "From the library of ...").
-/// A missing or unreadable file returns an empty list, never an error.
+/// Other local Steam accounts remembered in `loginusers.vdf`, for the
+/// cosmetic library-owner picker (persona shown in "From the library of ...").
+/// The currently active login is excluded so it cannot select itself. A
+/// missing or unreadable file returns an empty list, never an error.
 #[tauri::command]
 pub fn get_steam_accounts(
     app: tauri::AppHandle,
 ) -> Result<Vec<crate::steam::loginusers::SteamAccount>, String> {
     let settings = SettingsManager::new(&app).try_load()?;
-    Ok(crate::steam::loginusers::read_configured_accounts(
-        &settings.steam_path,
-    ))
+    let (accounts, active) =
+        crate::steam::loginusers::read_other_configured_accounts(&settings.steam_path);
+    if let Some((ref active_id, source)) = active {
+        crate::desk_log_debug!(
+            "settings",
+            "Library-owner picker: excluded active Steam account {} (source={}), offering {} other account(s)",
+            active_id,
+            source,
+            accounts.len()
+        );
+    } else {
+        crate::desk_log_debug!(
+            "settings",
+            "Library-owner picker: active Steam account unknown, offering {} account(s)",
+            accounts.len()
+        );
+    }
+    Ok(accounts)
 }
 
 #[tauri::command]
