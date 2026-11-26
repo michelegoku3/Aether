@@ -9,7 +9,8 @@
 #       - /W4 /permissive- /Zc:preprocessor on MSVC (before: default level W1)
 #       - /WX (warning = error) when AETHER_WARNINGS_AS_ERRORS=ON (default ON)
 #       - clang-tidy on the target's sources. REQUIRED (the preset default)
-#         fails the configure when the binary is missing; AUTO only warns and
+#         fails the configure when the binary is missing or older than the
+#         Clang major the MSVC STL accepts (STL1000); AUTO only warns and
 #         skips during local setup. Configuration in AetherDLL/.clang-tidy
 #       - generated sources (protobuf) are excluded from lint and /WX
 #
@@ -22,10 +23,60 @@
 #   cmake -DAETHER_WARNINGS_AS_ERRORS=OFF   -> visible but non-blocking warnings
 #   cmake -DAETHER_CLANG_TIDY=OFF           -> skips clang-tidy (explicit opt-out)
 #   cmake -DAETHER_CLANG_TIDY=C:/path/clang-tidy.exe
+#   cmake -DAETHER_CLANG_TIDY_MIN_MAJOR=<n> -> force the version floor (default
+#                                              AUTO = read it from yvals_core.h)
 # ============================================================================
 
 option(AETHER_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (/WX)" ON)
 set(AETHER_CLANG_TIDY "AUTO" CACHE STRING "clang-tidy: AUTO | REQUIRED | OFF | <path to clang-tidy>")
+set(AETHER_CLANG_TIDY_MIN_MAJOR "AUTO" CACHE STRING
+    "Minimum clang-tidy major: AUTO = the MSVC STL requirement; <n> = force")
+
+# Major version of a clang-tidy binary; empty when it cannot run at all.
+function(_aether_clang_tidy_major exe out)
+    execute_process(COMMAND "${exe}" --version
+        OUTPUT_VARIABLE _version ERROR_QUIET RESULT_VARIABLE _rc TIMEOUT 30)
+    if(_rc EQUAL 0 AND _version MATCHES "LLVM version ([0-9]+)")
+        set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+    else()
+        set(${out} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
+# Clang floor enforced by the MSVC STL (STL1000 in yvals_core.h). Empty on
+# non-MSVC toolchains or if the header shape changes: the check then degrades
+# to "no floor" instead of blocking an unrelated build.
+function(_aether_stl_clang_floor out)
+    set(${out} "" PARENT_SCOPE)
+    if(NOT MSVC)
+        return()
+    endif()
+
+    set(_candidates ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+    if(DEFINED ENV{INCLUDE})
+        list(APPEND _candidates $ENV{INCLUDE})
+    endif()
+    # Some generators (Ninja + MSVC) leave CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES
+    # empty: the toolset include dir sits next to cl.exe, under <msvc>/include.
+    get_filename_component(_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    foreach(_step 1 2 3 4)
+        get_filename_component(_dir "${_dir}" DIRECTORY)
+        if(EXISTS "${_dir}/include/yvals_core.h")
+            list(APPEND _candidates "${_dir}/include")
+            break()
+        endif()
+    endforeach()
+
+    foreach(_dir IN LISTS _candidates)
+        if(EXISTS "${_dir}/yvals_core.h")
+            file(READ "${_dir}/yvals_core.h" _yvals LIMIT 262144)
+            if(_yvals MATCHES "#if __clang_major__ < ([0-9]+)")
+                set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+            endif()
+            return()
+        endif()
+    endforeach()
+endfunction()
 
 set(_aether_clang_tidy_required FALSE)
 if(AETHER_CLANG_TIDY STREQUAL "REQUIRED")
@@ -49,20 +100,70 @@ if(NOT AETHER_CLANG_TIDY STREQUAL "OFF")
         endif()
         set(AETHER_CLANG_TIDY_EXE "${AETHER_CLANG_TIDY}" CACHE FILEPATH "" FORCE)
     endif()
-    if(AETHER_CLANG_TIDY_EXE)
-        message(STATUS "[AetherDLL] clang-tidy enabled: ${AETHER_CLANG_TIDY_EXE}")
-    elseif(_aether_clang_tidy_required)
-        message(FATAL_ERROR "[AetherDLL] clang-tidy is REQUIRED but was not found. "
-                            "Install 'C++ Clang tools for Windows' in the Visual Studio Installer "
-                            "or LLVM, pass -DAETHER_CLANG_TIDY=<path>, or opt out explicitly "
-                            "with -DAETHER_CLANG_TIDY=OFF.")
-    else()
+    if(NOT AETHER_CLANG_TIDY_EXE)
+        if(_aether_clang_tidy_required)
+            message(FATAL_ERROR "[AetherDLL] clang-tidy is REQUIRED but was not found. "
+                                "Install 'C++ Clang tools for Windows' in the Visual Studio Installer "
+                                "or LLVM, pass -DAETHER_CLANG_TIDY=<path>, or opt out explicitly "
+                                "with -DAETHER_CLANG_TIDY=OFF.")
+        endif()
         message(STATUS "[AetherDLL] clang-tidy NOT found: static analysis skipped "
                        "(install 'C++ Clang tools for Windows' in the VS Installer, "
                        "or pass -DAETHER_CLANG_TIDY=<path>)")
     endif()
 else()
     message(STATUS "[AetherDLL] clang-tidy disabled by AETHER_CLANG_TIDY=OFF")
+endif()
+
+# clang-tidy parses the same headers as the compiler, so an MSVC STL that
+# refuses an old Clang (STL1000 in yvals_core.h) turns every linted translation
+# unit into a clang-diagnostic-error. Probe both versions so the mismatch fails
+# at configure with the actionable message instead of dying mid-build.
+set(_aether_tidy_usable FALSE)
+if(AETHER_CLANG_TIDY_EXE)
+    _aether_clang_tidy_major("${AETHER_CLANG_TIDY_EXE}" _aether_tidy_major)
+
+    set(_aether_tidy_floor "${AETHER_CLANG_TIDY_MIN_MAJOR}")
+    if(_aether_tidy_floor STREQUAL "AUTO")
+        _aether_stl_clang_floor(_aether_tidy_floor)
+    endif()
+
+    # REQUIRED and an explicit path both promise that the gate runs; only AUTO
+    # may degrade to "skipped", and only with a visible message.
+    if(_aether_clang_tidy_required OR NOT AETHER_CLANG_TIDY STREQUAL "AUTO")
+        set(_aether_tidy_strict TRUE)
+    else()
+        set(_aether_tidy_strict FALSE)
+    endif()
+
+    if(NOT _aether_tidy_major)
+        if(_aether_tidy_strict)
+            message(FATAL_ERROR "[AetherDLL] clang-tidy does not run: ${AETHER_CLANG_TIDY_EXE} "
+                                "('--version' failed). Install a working LLVM or pass "
+                                "-DAETHER_CLANG_TIDY=<path>.")
+        endif()
+        message(STATUS "[AetherDLL] clang-tidy version unknown: static analysis skipped "
+                       "(${AETHER_CLANG_TIDY_EXE})")
+    elseif(_aether_tidy_floor AND _aether_tidy_major LESS _aether_tidy_floor)
+        if(_aether_tidy_strict)
+            message(FATAL_ERROR
+                "[AetherDLL] clang-tidy ${_aether_tidy_major} is older than the MSVC STL "
+                "requirement (Clang ${_aether_tidy_floor}): ${AETHER_CLANG_TIDY_EXE}. "
+                "Install LLVM ${_aether_tidy_floor}+ (or the VS 'C++ Clang tools for Windows' "
+                "component), pass -DAETHER_CLANG_TIDY=<newer clang-tidy>, or opt out with "
+                "-DAETHER_CLANG_TIDY=OFF.")
+        endif()
+        message(STATUS "[AetherDLL] clang-tidy ${_aether_tidy_major} is older than the MSVC STL "
+                       "requirement (Clang ${_aether_tidy_floor}): static analysis skipped")
+    else()
+        set(_aether_tidy_usable TRUE)
+        if(_aether_tidy_floor)
+            message(STATUS "[AetherDLL] clang-tidy ${_aether_tidy_major} enabled "
+                           "(MSVC STL requires Clang ${_aether_tidy_floor}): ${AETHER_CLANG_TIDY_EXE}")
+        else()
+            message(STATUS "[AetherDLL] clang-tidy ${_aether_tidy_major} enabled: ${AETHER_CLANG_TIDY_EXE}")
+        endif()
+    endif()
 endif()
 
 if(AETHER_WARNINGS_AS_ERRORS)
@@ -101,7 +202,7 @@ function(aether_apply_quality target)
     # Note: generated protobuf sources do NOT go through here: they live in the
     # dedicated aether_proto target (root CMakeLists) compiled with /w.
 
-    if(AETHER_CLANG_TIDY_EXE)
+    if(_aether_tidy_usable)
         # CMake adds --driver-mode=cl on its own when the compiler is MSVC.
         # /EHsc must be forwarded explicitly: without it clang-tidy parses
         # with exceptions disabled and flags every try/throw (clang-diagnostic-error)

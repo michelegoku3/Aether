@@ -211,6 +211,8 @@ jobs:
     permissions:
       contents: write
     runs-on: windows-latest
+    env:
+      AETHER_LLVM_VERSION: "22.1.3"
 
     steps:
       - name: Checkout Repository
@@ -241,11 +243,30 @@ jobs:
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@master
 
+      # The VS 2026 image ships MSVC 14.52, whose STL refuses Clang < 22
+      # (STL1000), and it provides LLVM 20.1.8 plus the VS clang/clang-cl
+      # components, but no clang-tidy. Install a matching LLVM in its own
+      # directory instead of the image's copy.
+      - name: Install LLVM (clang-tidy)
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $dir = "C:\LLVM-$env:AETHER_LLVM_VERSION"
+          $installer = Join-Path $env:RUNNER_TEMP "LLVM-$env:AETHER_LLVM_VERSION-win64.exe"
+          Invoke-WebRequest -UseBasicParsing `
+            "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:AETHER_LLVM_VERSION/LLVM-$env:AETHER_LLVM_VERSION-win64.exe" `
+            -OutFile $installer
+          $p = Start-Process -FilePath $installer -ArgumentList "/S", "/D=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "LLVM installer failed: $($p.ExitCode)" }
+          if (-not (Test-Path "$dir\bin\clang-tidy.exe")) { throw "LLVM install produced no clang-tidy" }
+          & "$dir\bin\clang-tidy.exe" --version
+
       # The configure step applies the cmake/Quality.cmake gates: /W4 /WX,
       # required clang-tidy, orphan headers/sources, and the unit tests as
       # part of ALL. Same gates as "Build All" in Visual Studio.
       - name: Configure AetherDLL
-        run: cmake --preset x64-Release
+        shell: pwsh
+        run: cmake --preset x64-Release "-DAETHER_CLANG_TIDY=C:/LLVM-$env:AETHER_LLVM_VERSION/bin/clang-tidy.exe"
         working-directory: AetherDLL
 
       - name: Build AetherDLL (includes unit tests via aether_run_tests)

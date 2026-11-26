@@ -168,18 +168,25 @@ via `aether_apply_quality(<target>)`.
 | `/W4 /permissive- /Zc:preprocessor` | compiles at high warning level and conforming C++ | — |
 | `/WX` | every MSVC warning is an error | `-DAETHER_WARNINGS_AS_ERRORS=OFF` (prints a WARNING at configure) |
 | `/external:W0` | zero noise from protobuf/abseil/lua/MinHook | — |
-| **clang-tidy** | static C++ bugs: use-after-move, narrowing, avoidable copies, missing locks, UB (CERT) | `-DAETHER_CLANG_TIDY=OFF` (prints a STATUS at configure); checks in `AetherDLL/.clang-tidy` |
+| **clang-tidy** | static C++ bugs: use-after-move, narrowing, avoidable copies, missing locks, UB (CERT) | `-DAETHER_CLANG_TIDY=OFF` (prints a STATUS at configure), `-DAETHER_CLANG_TIDY_MIN_MAJOR=<n>` (forces the version floor); checks in `AetherDLL/.clang-tidy` |
 | `aether_check_sources` | `.cpp` in the target folder but not in the target | — |
 | `aether_check_headers` | `.h/.inl` no project file includes | — |
 | `aether_run_tests` (ALL) | `ctest` runs on every build; a red test = red build | `-DAETHER_BUILD_TESTS=OFF` |
 | `verify_version.ps1` | DLL without version resource | — |
 
 clang-tidy is **required** by the `x64-Release` preset: the configure fails when
-the binary is missing, so CI cannot silently ship without static analysis.
-Install it from the Visual Studio Installer (*Individual components* ->
-**"C++ Clang tools for Windows"**) or LLVM. `-DAETHER_CLANG_TIDY=OFF` is the
-explicit opt-out; `-DAETHER_CLANG_TIDY=AUTO` skips it with a visible message
-during one-off local setup.
+the binary is missing or older than the Clang major the MSVC STL accepts (the
+`STL1000` floor in `yvals_core.h`: 20 with MSVC 14.51, 22 with MSVC 14.52), so
+CI cannot silently ship without static analysis. Install it from the Visual
+Studio Installer (*Individual components* -> **"C++ Clang tools for Windows"**)
+or LLVM. `-DAETHER_CLANG_TIDY=OFF` is the explicit opt-out;
+`-DAETHER_CLANG_TIDY=AUTO` skips it with a visible message during one-off local
+setup, and `-DAETHER_CLANG_TIDY_MIN_MAJOR=<n>` forces the version floor instead
+of reading it from the header.
+
+The `release-dll` job installs LLVM 22.1.3 in `C:\LLVM-22.1.3` and passes that
+path with `-DAETHER_CLANG_TIDY`, because the runner image ships LLVM 20.1.8 and
+does not include the clang-tidy Visual Studio component.
 
 ### Turning a warning backlog into a list
 
