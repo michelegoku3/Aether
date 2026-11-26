@@ -35,8 +35,10 @@ fn dlc_rules_match_sff() {
 #[test]
 fn nsfw_name_heuristic_uses_whole_tokens() {
     assert!(looks_nsfw_by_name("Sex World 3"));
-    assert!(looks_nsfw_by_name("Furry Love"));
-    assert!(looks_nsfw_by_name("SEXY Party"));
+    assert!(looks_nsfw_by_name("Hentai Hero"));
+    assert!(looks_nsfw_by_name("Porn Simulator"));
+    assert!(!looks_nsfw_by_name("The Sexy Brutale"));
+    assert!(!looks_nsfw_by_name("Furry Tangram"));
     assert!(!looks_nsfw_by_name("Essex Express"));
     assert!(!looks_nsfw_by_name("Cyberpunk 2077"));
     assert!(!looks_nsfw_by_name("HuniePop"));
@@ -47,7 +49,8 @@ fn nsfw_combines_descriptor_and_name() {
     let flagged = meta("game", None, false, true);
     assert!(is_nsfw(&flagged, "Innocent Title"));
     let clean = meta("game", None, false, false);
-    assert!(is_nsfw(&clean, "Furry Love"));
+    assert!(is_nsfw(&clean, "Hentai World"));
+    assert!(!is_nsfw(&clean, "The Sexy Brutale"));
     assert!(!is_nsfw(&clean, "Stardew Valley"));
 }
 
@@ -65,4 +68,14 @@ fn take_me_is_not_dlc_and_is_nsfw() {
     };
     assert!(!is_dlc_like(&m));
     assert!(is_nsfw(&m, "Take Me To The Dungeon!!"));
+}
+
+#[test]
+fn hub_linked_full_game_is_not_dlc() {
+    // 4435490 (Call of Duty: Modern Warfare 4): type 0 ("game"), parent_appid 1938090 (CoD HQ)
+    assert!(!is_dlc_like(&meta("game", Some(1938090), false, false)));
+    // Real DLC, demo, and untyped child entries with parent_appid remain filtered
+    assert!(is_dlc_like(&meta("dlc", Some(1091500), false, false)));
+    assert!(is_dlc_like(&meta("demo", Some(1938090), false, false)));
+    assert!(is_dlc_like(&meta("", Some(1938090), false, false)));
 }

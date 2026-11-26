@@ -20,6 +20,7 @@ interface StoreViewProps {
   onRefreshUsage?: (forcedKey?: string) => Promise<void>;
   settingsRevision: number;
   settingsReady: boolean;
+  defaultStoreFrontFilter?: string;
   useAlternativeGameCards: boolean;
   alternativeCardsOpacity: number;
   alternativeCardsFade: number;
@@ -30,6 +31,7 @@ export const StoreView = memo(function StoreView({
   onRefreshUsage,
   settingsRevision,
   settingsReady,
+  defaultStoreFrontFilter,
   useAlternativeGameCards,
   alternativeCardsOpacity,
   alternativeCardsFade,
@@ -39,6 +41,7 @@ export const StoreView = memo(function StoreView({
     active,
     settingsRevision,
     settingsReady,
+    defaultStoreFrontFilter,
     libraryGames: library?.games,
   });
   const download = useStoreDownload({ onRefreshUsage });
@@ -103,6 +106,7 @@ export const StoreView = memo(function StoreView({
             }}
             style={{ width: '140px' }}
           >
+            <option value="relevance">Relevance</option>
             <option value="newest">Newest</option>
             <option value="trending">Trending</option>
             <option value="name">Name A-Z</option>

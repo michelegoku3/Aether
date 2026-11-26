@@ -40,10 +40,13 @@ const NSFW_CONTENT_DESCRIPTOR_IDS: [u32; 2] = [3, 4];
 /// the filter only drops rows Steam explicitly tagged as DLC-ish.
 #[derive(Debug, Clone, Default)]
 pub struct StoreItemMeta {
+    /// Trimmed non-empty app title returned by GetItems (`None` when stripped).
+    pub name: Option<String>,
     /// Lowercase type string ("game", "dlc", "demo", "mod", "rerelease",
     /// "tool", "video", "music", "advertising"); "" when GetItems had no body.
     pub kind: String,
-    /// Set only for DLC of another app; None for base games and demos.
+    /// Parent appid when Steam links a child item (DLC, demo, or a standalone
+    /// `"game"` / `"rerelease"` grouped under a hub such as Call of Duty HQ).
     pub parent_appid: Option<u32>,
     /// True when Steam returned a row with no name and no type: it strips all
     /// public metadata from fully removed (delisted) DLC content, while real
@@ -108,9 +111,10 @@ pub struct StoreItemPurchaseOption {
 
 /// The SFF structural DLC rule set, three signals with no name matching:
 ///
-/// 1. `parent_appid` set → DLC of another app. Re-releases hang off the base
-///    appid the same way but ship as standalone games; Steam tags them
-///    `type: 14` → we keep "rerelease" rows and drop everything else.
+/// 1. `parent_appid` set → DLC/child of another app. Re-releases (`type: 14`)
+///    and hub-grouped standalone games (`type: 0`, e.g. Call of Duty titles
+///    under CoD HQ) hang off a parent appid the same way but ship as full games
+///    → we keep `"game"` and `"rerelease"` rows and drop everything else.
 /// 2. `delisted_blank` → removed-from-store DLC content (see field docs).
 /// 3. Belt-and-suspenders type drop: tool/video/music/advertising/dlc kinds
 ///    without a parent (edge cases GetItems reports with no parent set).
@@ -118,7 +122,7 @@ pub fn is_dlc_like(meta: &StoreItemMeta) -> bool {
     if meta.delisted_blank {
         return true;
     }
-    if meta.parent_appid.is_some() && meta.kind != "rerelease" {
+    if meta.parent_appid.is_some() && !matches!(meta.kind.as_str(), "game" | "rerelease") {
         return true;
     }
     if !meta.kind.is_empty() && !matches!(meta.kind.as_str(), "game" | "demo" | "mod" | "rerelease")
@@ -128,18 +132,14 @@ pub fn is_dlc_like(meta: &StoreItemMeta) -> bool {
     false
 }
 
-/// Name-based NSFW heuristic (ported from SFF's `_NSFW_NAME_RE`, but applied
-/// to whole tokens instead of raw substring so "Essex"-style names can't
-/// false-positive). It is a safety net for adult titles without descriptors.
+/// Name-based NSFW heuristic (safety net for explicit adult titles without
+/// descriptors). Avoids ambiguous tokens such as `"sexy"` or `"furry"` so
+/// non-adult games (e.g. *The Sexy Brutale*) are not hidden; Steam content
+/// descriptors `3`/`4` still catch borderline titles.
 pub fn looks_nsfw_by_name(name: &str) -> bool {
     name.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
-        .any(|token| {
-            matches!(
-                token,
-                "hentai" | "futanari" | "furry" | "sex" | "sexy" | "porn"
-            )
-        })
+        .any(|token| matches!(token, "hentai" | "futanari" | "sex" | "porn"))
 }
 
 /// The single NSFW classification entry point: descriptor first, name as
@@ -455,11 +455,13 @@ async fn fetch_chunk(
         let Some(app_id) = item.appid else { continue };
         seen.push(app_id);
 
-        let name_empty = item
+        let name = item
             .name
-            .as_ref()
-            .map(|n| n.trim().is_empty())
-            .unwrap_or(true);
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(str::to_string);
+        let name_empty = name.is_none();
 
         let parent_appid = item
             .related_items
@@ -524,6 +526,7 @@ async fn fetch_chunk(
         out.insert(
             app_id,
             StoreItemMeta {
+                name,
                 kind: item.type_code.map(map_type_code).unwrap_or_default(),
                 parent_appid,
                 // Steam strips name + type from fully delisted DLC entries.

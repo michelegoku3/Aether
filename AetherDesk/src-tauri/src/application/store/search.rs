@@ -94,19 +94,27 @@ pub async fn search_store(
                 .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
             GameInfoCache::new(&cache_dir, info_cache_version)
                 .merge_store_results_with_manifest_context(&results, hubcap_checked);
-            match cache.put(&cache_key, results.clone()) {
-                Ok(()) => crate::desk_log_debug!(
+            if results.is_empty() {
+                crate::desk_log_debug!(
                     "store",
-                    "Store search cache write complete query_len={} results={}",
-                    query.len(),
-                    results.len()
-                ),
-                Err(error) => crate::desk_log_warn!(
-                    "store",
-                    "Store search cache write failed query_len={}: {}",
-                    query.len(),
-                    error
-                ),
+                    "Skipping store search cache write for empty result set query_len={}",
+                    query.len()
+                );
+            } else {
+                match cache.put(&cache_key, results.clone()) {
+                    Ok(()) => crate::desk_log_debug!(
+                        "store",
+                        "Store search cache write complete query_len={} results={}",
+                        query.len(),
+                        results.len()
+                    ),
+                    Err(error) => crate::desk_log_warn!(
+                        "store",
+                        "Store search cache write failed query_len={}: {}",
+                        query.len(),
+                        error
+                    ),
+                }
             }
             crate::desk_log_info!(
                 "store",
@@ -187,7 +195,9 @@ pub async fn get_trending_store_games(
                 .merge_names(results.iter().map(|game| (game.id, game.name.clone())));
             GameInfoCache::new(&cache_dir, info_cache_version)
                 .merge_store_results_with_manifest_context(&results, false);
-            let _ = cache.put(&cache_key, results.clone());
+            if !results.is_empty() {
+                let _ = cache.put(&cache_key, results.clone());
+            }
             Ok(results)
         }
         Err(error) => cache.get_any(&cache_key).ok_or(error),
@@ -281,6 +291,60 @@ pub struct CrackInfo {
     pub status: String,
 }
 
+const CRACK_CACHE_TTL: u64 = 24 * 60 * 60;
+
+fn split_crack_cache_hits(
+    entries: &serde_json::Map<String, serde_json::Value>,
+    app_ids: &[u32],
+    now: u64,
+) -> (HashMap<u32, CrackInfo>, Vec<u32>) {
+    let mut hits = HashMap::new();
+    let mut need_fetch = Vec::new();
+    for id in app_ids {
+        if let Some(entry) = entries.get(&id.to_string()) {
+            let ts = entry.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
+            if let Some(status) = entry.get("status").and_then(|v| v.as_str()) {
+                if now.saturating_sub(ts) <= CRACK_CACHE_TTL {
+                    if !status.is_empty() {
+                        hits.insert(
+                            *id,
+                            CrackInfo {
+                                status: status.to_string(),
+                            },
+                        );
+                    }
+                    continue;
+                }
+            }
+        }
+        need_fetch.push(*id);
+    }
+    (hits, need_fetch)
+}
+
+fn parse_crack_status_rows(arr: &[serde_json::Value]) -> HashMap<u32, CrackInfo> {
+    let mut parsed = HashMap::new();
+    for item in arr {
+        let appid = item.get("steam_appid").and_then(|v| {
+            v.as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .or_else(|| v.as_str().and_then(|s| s.parse::<u32>().ok()))
+        });
+        let status = item.get("status").and_then(|v| v.as_str());
+        if let (Some(id), Some(st)) = (appid, status) {
+            if !st.trim().is_empty() {
+                parsed.insert(
+                    id,
+                    CrackInfo {
+                        status: st.to_string(),
+                    },
+                );
+            }
+        }
+    }
+    parsed
+}
+
 pub async fn check_crack_status_bulk(
     app: &tauri::AppHandle,
     app_ids: Vec<u32>,
@@ -291,7 +355,6 @@ pub async fn check_crack_status_bulk(
     const DEFAULT_SUPABASE_URL: &str = "https://lhvknkrfhehcclzlabsl.supabase.co";
     const DEFAULT_SUPABASE_ANON_KEY: &str =
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxodmtua3JmaGVoY2NsemxhYnNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NzM0MTksImV4cCI6MjA5NDQ0OTQxOX0.B7YOW_hpn2zHxR-sfHgiNgqidpfESwJpixLrh-MevE8";
-    const CACHE_TTL: u64 = 24 * 60 * 60;
     const MAX_APP_IDS: usize = 200;
 
     if app_ids.is_empty() {
@@ -325,38 +388,13 @@ pub async fn check_crack_status_bulk(
     let _ = fs::create_dir_all(&cache_dir);
     let cache_path = cache_dir.join("crack_status_cache.json");
 
-    let mut result: HashMap<u32, CrackInfo> = HashMap::new();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
-    // Load cache.
-    let mut cache: serde_json::Value = serde_json::Value::Null;
-    if let Ok(content) = fs::read_to_string(&cache_path) {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-            cache = parsed;
-        }
-    }
-    let mut need_fetch: Vec<u32> = Vec::new();
-    for id in &app_ids {
-        if let Some(obj) = cache.get("entries").and_then(|v| v.as_object()) {
-            if let Some(entry) = obj.get(&id.to_string()) {
-                let ts = entry.get("ts").and_then(|v| v.as_u64()).unwrap_or(0);
-                if now.saturating_sub(ts) <= CACHE_TTL {
-                    let status = entry
-                        .get("status")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-                    if let Some(st) = status {
-                        result.insert(*id, CrackInfo { status: st });
-                        continue;
-                    }
-                }
-            }
-        }
-        need_fetch.push(*id);
-    }
+    let mut entries = load_pcgw_cache_entries(&cache_path);
+    let (mut result, need_fetch) = split_crack_cache_hits(&entries, &app_ids, now);
 
     if need_fetch.is_empty() {
         return Ok(result);
@@ -372,10 +410,8 @@ pub async fn check_crack_status_bulk(
         "{}/rest/v1/games?select=steam_appid,status&steam_appid=in.({})",
         supabase_url, ids_csv
     );
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = crate::providers::http::shared_client(15);
+    let mut fetched_rows: Option<HashMap<u32, CrackInfo>> = None;
     if let Ok(resp) = client
         .get(&url)
         .header("apikey", supabase_anon_key)
@@ -383,49 +419,31 @@ pub async fn check_crack_status_bulk(
         .send()
         .await
     {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            if let Some(arr) = json.as_array() {
-                for item in arr {
-                    let appid = item
-                        .get("steam_appid")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse::<u32>().ok());
-                    let status = item.get("status").and_then(|v| v.as_str());
-                    if let (Some(id), Some(st)) = (appid, status) {
-                        result.insert(
-                            id,
-                            CrackInfo {
-                                status: st.to_string(),
-                            },
-                        );
-                    }
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(arr) = json.as_array() {
+                    fetched_rows = Some(parse_crack_status_rows(arr));
                 }
             }
         }
     }
 
-    // Update cache.
-    let mut entries = cache
-        .get("entries")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !entries.is_object() {
-        entries = serde_json::json!({});
-    }
-    let obj = entries.as_object_mut().unwrap();
-    for id in &need_fetch {
-        if let Some(info) = result.get(id) {
-            obj.insert(
-                id.to_string(),
-                serde_json::json!({"status": info.status, "ts": now}),
-            );
+    // Only update cache when Supabase actually returned a valid array response;
+    // transient HTTP/network failures leave the cache untouched.
+    if let Some(rows) = fetched_rows {
+        for id in &need_fetch {
+            if let Some(info) = rows.get(id) {
+                entries.insert(
+                    id.to_string(),
+                    serde_json::json!({"status": info.status, "ts": now}),
+                );
+                result.insert(*id, info.clone());
+            } else {
+                entries.insert(id.to_string(), serde_json::json!({"status": "", "ts": now}));
+            }
         }
+        let _ = save_pcgw_cache_entries(&cache_path, &entries);
     }
-    let stamped = serde_json::json!({"entries": entries});
-    let _ = fs::write(
-        &cache_path,
-        serde_json::to_string(&stamped).unwrap_or_default(),
-    );
 
     Ok(result)
 }
@@ -467,16 +485,26 @@ fn is_valid_pcgw_drm_label(drm: &str) -> bool {
         || drm.len() > 30)
 }
 
+fn find_drm_template_value(wikitext: &str) -> Option<&str> {
+    let lower = wikitext.to_ascii_lowercase();
+    let mut offset = 0;
+    while let Some(rel_start) = lower[offset..].find("{{drm") {
+        let after_tag = offset + rel_start + 5;
+        let trimmed = wikitext[after_tag..].trim_start();
+        if let Some(after_pipe) = trimmed.strip_prefix('|') {
+            let end = after_pipe.find("}}")?;
+            return Some(&after_pipe[..end]);
+        }
+        offset = after_tag;
+    }
+    None
+}
+
 fn parse_pcgw_drm(wikitext: &str, app_id: u32) -> Option<String> {
     if !wikitext.contains(&app_id.to_string()) {
         return None;
     }
-    // Parse DRM template. "{{DRM|" is 6 chars, so +6 lands on the value;
-    // +7 would silently eat its first letter ("Denuvo" -> "enuvo").
-    let start = wikitext.find("{{DRM|")?;
-    let rest = &wikitext[start + 6..];
-    let end = rest.find("}}")?;
-    let val = rest[..end].trim();
+    let val = find_drm_template_value(wikitext)?.trim();
     let drm = if val.eq_ignore_ascii_case("none") || val.is_empty() {
         "None".to_string()
     } else {
@@ -488,6 +516,39 @@ fn parse_pcgw_drm(wikitext: &str, app_id: u32) -> Option<String> {
             .to_string()
     };
     is_valid_pcgw_drm_label(&drm).then_some(drm)
+}
+
+fn extract_page_wikitext(page: &serde_json::Value) -> Option<&str> {
+    page.get("revisions")
+        .and_then(|r| r.as_array())
+        .and_then(|a| a.first())
+        .and_then(|r| r.get("*"))
+        .and_then(|c| c.as_str())
+}
+
+fn select_pcgw_drm_from_pages(
+    pages: &serde_json::Map<String, serde_json::Value>,
+    ordered_titles: &[String],
+    app_id: u32,
+) -> Option<String> {
+    for title in ordered_titles {
+        for page in pages.values() {
+            let page_title = page.get("title").and_then(|t| t.as_str()).unwrap_or("");
+            if page_title.eq_ignore_ascii_case(title) {
+                if let Some(drm) =
+                    extract_page_wikitext(page).and_then(|wt| parse_pcgw_drm(wt, app_id))
+                {
+                    return Some(drm);
+                }
+            }
+        }
+    }
+    for page in pages.values() {
+        if let Some(drm) = extract_page_wikitext(page).and_then(|wt| parse_pcgw_drm(wt, app_id)) {
+            return Some(drm);
+        }
+    }
+    None
 }
 
 fn load_pcgw_cache_entries(
@@ -570,21 +631,23 @@ async fn fetch_single_pcgw_drm(
         .json::<serde_json::Value>()
         .await
         .map_err(|_| ())?;
-    let Some(title) = search_json
+    let titles: Vec<String> = search_json
         .get("query")
         .and_then(|q| q.get("search"))
         .and_then(|s| s.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|o| o.get("title"))
-        .and_then(|t| t.as_str())
-        .map(String::from)
-    else {
+        .into_iter()
+        .flatten()
+        .filter_map(|o| o.get("title").and_then(|t| t.as_str()).map(str::to_string))
+        .take(5)
+        .collect();
+    if titles.is_empty() {
         return Ok(None);
-    };
+    }
 
+    let joined_titles = titles.join("|");
     let content_url = format!(
         "https://www.pcgamingwiki.com/w/api.php?action=query&prop=revisions&rvprop=content&titles={}&format=json",
-        percent_encode(&title)
+        percent_encode(&joined_titles)
     );
     let content_resp = client.get(&content_url).send().await.map_err(|_| ())?;
     if !content_resp.status().is_success() {
@@ -594,21 +657,15 @@ async fn fetch_single_pcgw_drm(
         .json::<serde_json::Value>()
         .await
         .map_err(|_| ())?;
-    let Some(wikitext) = content_json
+    let Some(pages) = content_json
         .get("query")
         .and_then(|q| q.get("pages"))
         .and_then(|p| p.as_object())
-        .and_then(|o| o.values().next())
-        .and_then(|v| v.get("revisions"))
-        .and_then(|r| r.as_array())
-        .and_then(|a| a.first())
-        .and_then(|r| r.get("*"))
-        .and_then(|c| c.as_str())
     else {
         return Ok(None);
     };
 
-    Ok(parse_pcgw_drm(wikitext, id))
+    Ok(select_pcgw_drm_from_pages(pages, &titles, id))
 }
 
 pub async fn check_pc_drm_bulk(
@@ -731,9 +788,10 @@ fn build_trending_cache_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_store_cache_key, build_trending_cache_key, load_pcgw_cache_entries, parse_pcgw_drm,
-        save_pcgw_cache_entries, split_pcgw_cache_hits, warm_store_front_with,
-        PCGW_NEGATIVE_CACHE_TTL, STORE_FRONT_FIRST_PAGE,
+        build_store_cache_key, build_trending_cache_key, load_pcgw_cache_entries,
+        parse_crack_status_rows, parse_pcgw_drm, save_pcgw_cache_entries,
+        select_pcgw_drm_from_pages, split_crack_cache_hits, split_pcgw_cache_hits,
+        warm_store_front_with, CRACK_CACHE_TTL, PCGW_NEGATIVE_CACHE_TTL, STORE_FRONT_FIRST_PAGE,
     };
     use crate::store::service::UnifiedStoreGame;
     use std::sync::{Arc, Mutex};
@@ -783,6 +841,79 @@ mod tests {
 
         let noisy = "App 730 {{DRM|offline team=1}}";
         assert_eq!(parse_pcgw_drm(noisy, 730), None);
+
+        let spaced = "App 730 {{drm | Ubisoft Connect}}";
+        assert_eq!(
+            parse_pcgw_drm(spaced, 730).as_deref(),
+            Some("Ubisoft Connect")
+        );
+    }
+
+    #[test]
+    fn select_pcgw_drm_from_pages_checks_beyond_first_candidate() {
+        let mut pages = serde_json::Map::new();
+        pages.insert(
+            "1".to_string(),
+            serde_json::json!({
+                "title": "Modern Warfare 4 (2007)",
+                "revisions": [{ "*": "App 7940 {{DRM|Steam}}" }]
+            }),
+        );
+        pages.insert(
+            "2".to_string(),
+            serde_json::json!({
+                "title": "Call of Duty: Modern Warfare 4",
+                "revisions": [{ "*": "App 4435490 {{DRM|Denuvo, Steam}}" }]
+            }),
+        );
+        let ordered = vec![
+            "Modern Warfare 4 (2007)".to_string(),
+            "Call of Duty: Modern Warfare 4".to_string(),
+        ];
+
+        assert_eq!(
+            select_pcgw_drm_from_pages(&pages, &ordered, 4435490).as_deref(),
+            Some("Denuvo")
+        );
+    }
+
+    #[test]
+    fn parse_crack_status_rows_accepts_numeric_and_string_appids() {
+        let rows = vec![
+            serde_json::json!({ "steam_appid": 100, "status": "cracked" }),
+            serde_json::json!({ "steam_appid": "200", "status": "uncracked" }),
+            serde_json::json!({ "steam_appid": "300", "status": " " }),
+        ];
+        let parsed = parse_crack_status_rows(&rows);
+        assert_eq!(parsed.get(&100).map(|v| v.status.as_str()), Some("cracked"));
+        assert_eq!(
+            parsed.get(&200).map(|v| v.status.as_str()),
+            Some("uncracked")
+        );
+        assert!(!parsed.contains_key(&300));
+    }
+
+    #[test]
+    fn crack_cache_skips_fresh_negative_hit_without_returning_empty() {
+        let mut entries = serde_json::Map::new();
+        let now = 1_700_000_000;
+        entries.insert(
+            "10".to_string(),
+            serde_json::json!({ "status": "", "ts": now - 100 }),
+        );
+        entries.insert(
+            "20".to_string(),
+            serde_json::json!({ "status": "", "ts": now - CRACK_CACHE_TTL - 10 }),
+        );
+        entries.insert(
+            "30".to_string(),
+            serde_json::json!({ "status": "cracked", "ts": now - 100 }),
+        );
+
+        let (hits, need_fetch) = split_crack_cache_hits(&entries, &[10, 20, 30], now);
+        assert_eq!(hits.get(&30).map(|v| v.status.as_str()), Some("cracked"));
+        assert!(!hits.contains_key(&10));
+        assert_eq!(need_fetch, vec![20]);
     }
 
     #[test]

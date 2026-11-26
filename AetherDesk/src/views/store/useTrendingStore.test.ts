@@ -131,4 +131,19 @@ describe('useTrendingStore', () => {
       storeFrontFilter: 'trending',
     });
   });
+
+  it('marks hasMore false on empty page and skips extra fetches until reset', async () => {
+    invokeMock.mockResolvedValueOnce([]);
+    const { result } = renderHook(useHarness);
+
+    expect(result.current.trending.hasMore).toBe(true);
+    await act(() => result.current.trending.loadNext(20));
+    expect(result.current.trending.hasMore).toBe(false);
+
+    await act(() => result.current.trending.loadNext(20));
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.trending.reset());
+    expect(result.current.trending.hasMore).toBe(true);
+  });
 });

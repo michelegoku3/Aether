@@ -218,6 +218,7 @@ impl StoreService {
                 store_front_filter,
                 start,
                 count,
+                show_store_dlcs,
                 steam_country_code,
                 store_currency,
             )
@@ -482,26 +483,95 @@ impl StoreService {
             }
         }
 
-        // 2. Create a fast O(1) lookup set of available app IDs on Hubcap.
-        // Exact-match fallback: if the textual Hubcap search missed a game that
-        // Steam returned with an exact normalized name hit, verify it directly
-        // via `has_manifest(app_id)`. This covers any future Hubcap substring
-        // edge-cases (punctuation, 400 soft-fail, etc) with at most one extra
-        // cheap HEAD-like request for the exact candidate — still fail-open.
+        // 2. Merge Steam catalog items + Hubcap extras, and for numeric AppID
+        // queries fall back to a direct GetItems lookup if neither source hit.
         let available_ids: HashSet<u32> = hubcap_res.iter().map(|g| g.app_id).collect();
-        // Only probe when a Hubcap client exists and we have at least one exact
-        // Steam hit that isn't already marked available. The probes themselves
-        // run later, concurrently with the GetItems metadata batch (step 4b):
-        // they only flip `has_manifest`, so nothing below has to wait for them.
+        let numeric_query_id = query.trim().parse::<u32>().ok().filter(|id| *id > 0);
+
+        let mut unified_list = Vec::new();
+        let mut added_ids = HashSet::new();
+
+        // 3. Populate unified list with Steam search results and overlay manifest availability.
+        // DRM/Denuvo enrichment is intentionally NOT done here: it is slower Steam appdetails
+        // metadata and is fetched by the frontend after first results are already rendered.
+        for item in steam_items {
+            let has_manifest = available_ids.contains(&item.id);
+            unified_list.push(UnifiedStoreGame {
+                id: item.id,
+                name: item.name.clone(),
+                app_id: item.id.to_string(),
+                has_manifest,
+                has_denuvo: false,
+                has_nsfw: false,
+                has_delisted: false,
+                image_url: item.image_url.clone(),
+                hero_image_url: String::new(),
+                store_kind: item.item_type.clone().unwrap_or_default(),
+                release_date_unix: None,
+                original_release_date_unix: None,
+                store_url_path: None,
+                price: price_from_store_item(&item),
+                metascore: metascore_from_store_item(&item),
+                controller_support: item.controller_support.clone(),
+                platforms: platforms_from_store_item(&item),
+                store_categories: None,
+                content_descriptor_ids: Vec::new(),
+            });
+            added_ids.insert(item.id);
+        }
+        let mut steam_result_ids = added_ids.clone();
+
+        // Direct AppID lookup when `storesearch` missed the requested numeric ID
+        // (common for delisted titles, some DLCs, or freshly indexed apps).
+        if let Some(app_id) = numeric_query_id {
+            if !added_ids.contains(&app_id) && !available_ids.contains(&app_id) {
+                let fetched =
+                    store_items::fetch_store_items_for_country(vec![app_id], steam_country_code)
+                        .await;
+                if let Some(meta) = fetched.get(&app_id) {
+                    if let Some(name) = meta.name.as_ref().filter(|n| !n.trim().is_empty()) {
+                        unified_list.push(UnifiedStoreGame {
+                            id: app_id,
+                            name: name.clone(),
+                            app_id: app_id.to_string(),
+                            has_manifest: available_ids.contains(&app_id),
+                            has_denuvo: false,
+                            has_nsfw: false,
+                            has_delisted: false,
+                            image_url: meta.library_capsule_url.clone().unwrap_or_default(),
+                            hero_image_url: meta.hero_image_url.clone().unwrap_or_default(),
+                            store_kind: meta.kind.clone(),
+                            release_date_unix: meta.release_date_unix,
+                            original_release_date_unix: meta.original_release_date_unix,
+                            store_url_path: meta.store_url_path.clone(),
+                            price: price_from_store_meta(meta, store_currency),
+                            metascore: None,
+                            controller_support: None,
+                            platforms: Some(platforms_from_store_meta(meta)),
+                            store_categories: Some(categories_from_store_meta(meta)),
+                            content_descriptor_ids: meta.content_descriptor_ids.clone(),
+                        });
+                        added_ids.insert(app_id);
+                        steam_result_ids.insert(app_id);
+                    }
+                }
+            }
+        }
+
+        // Exact-match fallback: if the textual Hubcap search missed a game that
+        // Steam returned with an exact normalized name hit (or numeric AppID match),
+        // verify it directly via `has_manifest(app_id)`. The probes run concurrently
+        // with the GetItems metadata batch (step 4b).
         let mut exact_missing: Vec<u32> = Vec::new();
         if hubcap_client.is_some() {
-            // Collect exact-score candidates (score 0) that lack a manifest flag.
-            for item in &steam_items {
-                if available_ids.contains(&item.id) {
+            for game in &unified_list {
+                if available_ids.contains(&game.id) {
                     continue;
                 }
-                if self.calculate_relevance_score(query, &item.name) == 0 {
-                    exact_missing.push(item.id);
+                if numeric_query_id == Some(game.id)
+                    || self.calculate_relevance_score(query, &game.name) == 0
+                {
+                    exact_missing.push(game.id);
                     if exact_missing.len() >= 3 {
                         break; // cap probe fan-out
                     }
@@ -562,38 +632,6 @@ impl StoreService {
             verified
         };
 
-        let mut unified_list = Vec::new();
-        let mut added_ids = HashSet::new();
-
-        // 3. Populate unified list with Steam search results and overlay manifest availability.
-        // DRM/Denuvo enrichment is intentionally NOT done here: it is slower Steam appdetails
-        // metadata and is fetched by the frontend after first results are already rendered.
-        for item in steam_items {
-            let has_manifest = available_ids.contains(&item.id);
-            unified_list.push(UnifiedStoreGame {
-                id: item.id,
-                name: item.name.clone(),
-                app_id: item.id.to_string(),
-                has_manifest,
-                has_denuvo: false,
-                has_nsfw: false,
-                has_delisted: false,
-                image_url: item.image_url.clone(),
-                hero_image_url: String::new(),
-                store_kind: item.item_type.clone().unwrap_or_default(),
-                release_date_unix: None,
-                original_release_date_unix: None,
-                store_url_path: None,
-                price: price_from_store_item(&item),
-                metascore: metascore_from_store_item(&item),
-                controller_support: item.controller_support.clone(),
-                platforms: platforms_from_store_item(&item),
-                store_categories: None,
-                content_descriptor_ids: Vec::new(),
-            });
-            added_ids.insert(item.id);
-        }
-
         // 4. Fallback: Hubcap matches that are NOT in Steam results are appended
         // (they were never in a Steam catalog checkout, so they arrive untyped).
         // They are collected separately first so the DLC filter below can see the
@@ -625,7 +663,6 @@ impl StoreService {
                 added_ids.insert(hg.app_id);
             }
         }
-        let steam_result_ids = added_ids.clone();
         unified_list.extend(hubcap_extras);
 
         // 4a. Cheap pre-filter + cap BEFORE the metadata batch.

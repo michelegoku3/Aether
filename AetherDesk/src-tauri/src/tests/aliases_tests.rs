@@ -86,3 +86,11 @@ fn take_me_to_the_dungeon_no_alias() {
     let variants = expanded_queries("Take Me To The Dungeon!!");
     assert_eq!(variants, vec!["Take Me To The Dungeon!!"]);
 }
+
+#[test]
+fn dota_and_modern_cod_aliases_expand() {
+    assert!(expanded_queries("dota").contains(&"dota 2".to_string()));
+    assert!(expanded_queries("dota2").contains(&"dota 2".to_string()));
+    assert!(expanded_queries("mw4").contains(&"call of duty modern warfare 4".to_string()));
+    assert!(expanded_queries("bo6").contains(&"call of duty black ops 6".to_string()));
+}

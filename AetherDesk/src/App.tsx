@@ -84,6 +84,7 @@ export default function App() {
     () => ({
       ready: appearance.settingsReady,
       revision: appearance.settingsRevision,
+      storeFrontFilter: appearance.storeFrontFilter,
       guardRef: navigation.settingsGuardRef,
       onMissingSteamPath: navigation.openSteamPathWarning,
       hubcapUsage: hubcap.usage,
@@ -92,6 +93,7 @@ export default function App() {
     [
       appearance.settingsReady,
       appearance.settingsRevision,
+      appearance.storeFrontFilter,
       navigation.settingsGuardRef,
       navigation.openSteamPathWarning,
       hubcap.usage,

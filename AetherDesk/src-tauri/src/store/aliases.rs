@@ -33,6 +33,8 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("bfv", &["battlefield v"]),
     ("bl2", &["borderlands 2"]),
     ("bl3", &["borderlands 3"]),
+    ("bo6", &["call of duty black ops 6", "black ops 6"]),
+    ("bo7", &["call of duty black ops 7", "black ops 7"]),
     (
         "botw",
         &[
@@ -60,8 +62,8 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("d3", &["diablo 3", "diablo iii"]),
     ("d4", &["diablo 4", "diablo iv"]),
     ("dbd", &["dead by daylight"]),
-    ("data", &["data 2"]),
-    ("data2", &["data 2"]),
+    ("dota", &["dota 2"]),
+    ("dota2", &["dota 2"]),
     ("ds", &["dark souls"]),
     ("ds1", &["dark souls"]),
     ("ds2", &["dark souls 2", "dark souls ii"]),
@@ -109,6 +111,18 @@ static ALIAS_EXPANSIONS: &[(&str, &[&str])] = &[
     ("mc", &["minecraft"]),
     ("mh", &["monster hunter"]),
     ("mk", &["mortal kombat"]),
+    (
+        "mw2",
+        &["call of duty modern warfare ii", "modern warfare 2"],
+    ),
+    (
+        "mw3",
+        &["call of duty modern warfare iii", "modern warfare 3"],
+    ),
+    (
+        "mw4",
+        &["call of duty modern warfare 4", "modern warfare 4"],
+    ),
     ("nba", &["nba 2k", "nba2k"]),
     ("nfs", &["need for speed"]),
     ("ow", &["overwatch"]),

@@ -21,6 +21,7 @@ export function useAppearanceRuntime({ onSettingsApplied }: Params) {
   const [themeRevision, setThemeRevision] = useState(0);
   const [settingsRevision, setSettingsRevision] = useState(0);
   const [settingsReady, setSettingsReady] = useState(false);
+  const [storeFrontFilter, setStoreFrontFilter] = useState('latest');
 
   const applySettingsSnapshot = useCallback((settings: AppSettings) => {
     setUseAlternativeGameCards(Boolean(settings.use_alternative_game_cards));
@@ -29,6 +30,7 @@ export function useAppearanceRuntime({ onSettingsApplied }: Params) {
     setPersonalWallpaperOpacity(clampPercentage(Number(settings.personal_wallpaper_opacity ?? 20)));
     setAlternativeCardsOpacity(clampPercentage(Number(settings.alternative_cards_opacity ?? 100)));
     setAlternativeCardsFade(clampPercentage(Number(settings.alternative_cards_fade ?? 50)));
+    setStoreFrontFilter(settings.store_front_filter?.trim() || 'latest');
   }, []);
 
   const refresh = useCallback(
@@ -47,6 +49,7 @@ export function useAppearanceRuntime({ onSettingsApplied }: Params) {
         setPersonalWallpaperOpacity(20);
         setAlternativeCardsOpacity(100);
         setAlternativeCardsFade(50);
+        setStoreFrontFilter('latest');
       } finally {
         setSettingsReady(true);
       }
@@ -78,6 +81,7 @@ export function useAppearanceRuntime({ onSettingsApplied }: Params) {
     alternativeCardsFade,
     settingsRevision,
     settingsReady,
+    storeFrontFilter,
     refresh,
     changeCustomCss,
     previewPersonalWallpaper,

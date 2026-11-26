@@ -303,10 +303,18 @@ impl SteamStore {
         filter: &str,
         start: usize,
         count: usize,
+        include_dlcs: bool,
         country_code: &str,
         store_currency: &str,
     ) -> Result<Vec<SteamStoreItem>, String> {
-        let params = store_front_params(filter, start, count, country_code, store_currency);
+        let params = store_front_params(
+            filter,
+            start,
+            count,
+            include_dlcs,
+            country_code,
+            store_currency,
+        );
         let response = self
             .client
             .get(STEAM_SEARCH_RESULTS_URL)
@@ -427,6 +435,7 @@ fn store_front_params(
     filter: &str,
     start: usize,
     count: usize,
+    include_dlcs: bool,
     country_code: &str,
     store_currency: &str,
 ) -> Vec<(&'static str, String)> {
@@ -450,8 +459,11 @@ fn store_front_params(
         ("json", "1".to_string()),
         ("cc", country_code.to_string()),
         ("l", language_code.to_string()),
-        // Games only. Avoids hardware/videos/tools leaking into the Store front.
-        ("category1", "998".to_string()),
+        // Games only unless DLCs are enabled in Settings (category1=21 is DLC).
+        (
+            "category1",
+            if include_dlcs { "998,21" } else { "998" }.to_string(),
+        ),
     ];
 
     match filter {
@@ -841,5 +853,14 @@ mod tests {
         let parsed = parse_search_results_html(html, "usd");
         assert_eq!(parsed.len(), 2);
         assert!(parsed.iter().all(|g| g.id == 1));
+    }
+
+    #[test]
+    fn store_front_params_respects_include_dlcs() {
+        let base_only = store_front_params("latest", 0, 20, false, "US", "usd");
+        assert!(base_only.contains(&("category1", "998".to_string())));
+
+        let with_dlcs = store_front_params("latest", 0, 20, true, "US", "usd");
+        assert!(with_dlcs.contains(&("category1", "998,21".to_string())));
     }
 }

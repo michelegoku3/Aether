@@ -259,4 +259,49 @@ describe('useStoreCatalog', () => {
     expect(localStorage.getItem('aether.store_hide_in_library')).toBe('true');
     expect(result.current.pageGames.map((g) => g.appId)).toEqual(['1', '3']);
   });
+
+  it('syncs storeFrontFilter from defaultStoreFrontFilter and resets sort to relevance on search', async () => {
+    state.results = games(2);
+    const { result, rerender } = renderHook(
+      ({ revision, front }) =>
+        useStoreCatalog({
+          active: true,
+          settingsReady: true,
+          settingsRevision: revision,
+          defaultStoreFrontFilter: front,
+        }),
+      { initialProps: { revision: 1, front: 'top_sellers' } }
+    );
+
+    expect(result.current.storeFrontFilter).toBe('top_sellers');
+    rerender({ revision: 2, front: 'discounts' });
+    await waitFor(() => expect(result.current.storeFrontFilter).toBe('discounts'));
+
+    act(() => result.current.setSortMode('newest'));
+    expect(result.current.sortMode).toBe('newest');
+
+    await act(() => result.current.runSearch('elden ring'));
+    expect(result.current.sortMode).toBe('relevance');
+  });
+
+  it('keeps auto-loading trending batches when filters shrink filtered results below two pages', async () => {
+    state.results = games(45);
+    const allInLibrary = games(44).map((g) => ({
+      id: g.id,
+      name: g.name,
+      appId: g.appId,
+      installDir: '',
+      libraryPath: '',
+      gamePath: '',
+      installed: true,
+      installing: false,
+    }));
+    localStorage.setItem('aether.store_hide_in_library', 'true');
+
+    renderHook(() =>
+      useStoreCatalog({ active: true, settingsReady: true, settingsRevision: 1, libraryGames: allInLibrary })
+    );
+
+    await waitFor(() => expect(trendingLoad).toHaveBeenCalledWith(40));
+  });
 });

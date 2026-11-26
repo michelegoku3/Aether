@@ -8,8 +8,9 @@ export interface PcDrmEnrichableGame {
 }
 
 export const enrichPcDrm = async <T extends PcDrmEnrichableGame>(games: T[]) => {
-  const appIds = games.map((game) => Number(game.appId)).filter(Number.isFinite);
-  const names = games.map((game) => game.name);
+  const validGames = games.filter((game) => Number.isFinite(Number(game.appId)));
+  const appIds = validGames.map((game) => Number(game.appId));
+  const names = validGames.map((game) => game.name);
   if (appIds.length === 0) return games;
 
   const drmMap: Record<string, string> = await invoke('check_pc_drm_bulk', { appIds, names });

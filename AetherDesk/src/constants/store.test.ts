@@ -16,10 +16,11 @@ describe('compareStoreGames', () => {
     ]);
   });
 
-  it('preserves order for trending', () => {
+  it('preserves order for trending and relevance', () => {
     const b = game('Beta');
     const a = game('Alpha');
     expect([b, a].sort((x, y) => compareStoreGames(x, y, 'trending')).map((g) => g.name)).toEqual(['Beta', 'Alpha']);
+    expect([b, a].sort((x, y) => compareStoreGames(x, y, 'relevance')).map((g) => g.name)).toEqual(['Beta', 'Alpha']);
   });
 
   it('sorts alphabetically for name', () => {

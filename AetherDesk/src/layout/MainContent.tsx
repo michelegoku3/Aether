@@ -31,6 +31,7 @@ export interface MainContentAppearance {
 export interface MainContentSettings {
   ready: boolean;
   revision: number;
+  storeFrontFilter?: string;
   guardRef: { current: SettingsGuard | null };
   onMissingSteamPath: () => void;
   hubcapUsage: { usage: number; limit: number; hasKey: boolean };
@@ -146,6 +147,7 @@ export const MainContent = memo(function MainContent({
           onRefreshUsage={settings.onRefreshUsage}
           settingsRevision={settings.revision}
           settingsReady={settings.ready}
+          defaultStoreFrontFilter={settings.storeFrontFilter}
           useAlternativeGameCards={appearance.useAlternativeGameCards}
           alternativeCardsOpacity={appearance.alternativeCardsOpacity}
           alternativeCardsFade={appearance.alternativeCardsFade}

@@ -6,7 +6,7 @@
  */
 export const STORE_ITEMS_PER_PAGE = 20;
 
-export type StoreSortMode = 'newest' | 'trending' | 'name' | 'discount' | 'price_asc';
+export type StoreSortMode = 'relevance' | 'newest' | 'trending' | 'name' | 'discount' | 'price_asc';
 
 export interface SortableStoreGame {
   name: string;

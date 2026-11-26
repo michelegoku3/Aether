@@ -8,6 +8,7 @@ interface TrendingSession {
   requests: Set<number>;
   nextStart: number;
   inFlight: number;
+  exhausted: boolean;
 }
 
 const createSession = (generation: number): TrendingSession => ({
@@ -15,6 +16,7 @@ const createSession = (generation: number): TrendingSession => ({
   requests: new Set<number>(),
   nextStart: 0,
   inFlight: 0,
+  exhausted: false,
 });
 
 export function useTrendingStore(
@@ -23,6 +25,7 @@ export function useTrendingStore(
   sortMode: StoreSortMode = 'trending'
 ) {
   const [isLoading, setIsLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const sessionRef = useRef<TrendingSession>(createSession(0));
   const filterRef = useRef(storeFrontFilter);
   filterRef.current = storeFrontFilter;
@@ -32,6 +35,7 @@ export function useTrendingStore(
   const reset = useCallback(() => {
     sessionRef.current = createSession(sessionRef.current.generation + 1);
     setIsLoading(false);
+    setHasMore(true);
   }, []);
 
   const mergeGames = useCallback(
@@ -58,7 +62,7 @@ export function useTrendingStore(
     async (start: number, count: number) => {
       const session = sessionRef.current;
       const generation = session.generation;
-      if (session.requests.has(start)) return;
+      if (session.exhausted || session.requests.has(start)) return;
 
       session.requests.add(start);
       session.nextStart = Math.max(session.nextStart, start + count);
@@ -71,7 +75,12 @@ export function useTrendingStore(
           storeFrontFilter: filterRef.current || null,
         });
         if (sessionRef.current.generation !== generation) return;
-        mergeGames(games || []);
+        const list = games || [];
+        if (list.length === 0) {
+          session.exhausted = true;
+          setHasMore(false);
+        }
+        mergeGames(list);
       } catch (error) {
         if (sessionRef.current.generation === generation) {
           console.warn('Trending store preload failed:', error);
@@ -94,5 +103,5 @@ export function useTrendingStore(
     [load]
   );
 
-  return { isLoading, reset, loadNext };
+  return { isLoading, hasMore, reset, loadNext };
 }

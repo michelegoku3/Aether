@@ -12,6 +12,7 @@ import { useStoreBadgeFilter, matchesStoreBadgeFilter } from './useStoreBadgeFil
 import { STORE_ITEMS_PER_PAGE, compareStoreGames, type StoreSortMode } from '../../constants/store';
 
 const HIDE_IN_LIBRARY_KEY = 'aether.store_hide_in_library';
+const MAX_FILTER_AUTO_LOAD_RESULTS = 200;
 
 const readHideInLibrary = (): boolean => {
   try {
@@ -26,14 +27,21 @@ interface Params {
   active: boolean;
   settingsRevision: number;
   settingsReady: boolean;
+  defaultStoreFrontFilter?: string;
   libraryGames?: InstalledGame[];
 }
 
-export function useStoreCatalog({ active, settingsRevision, settingsReady, libraryGames = [] }: Params) {
+export function useStoreCatalog({
+  active,
+  settingsRevision,
+  settingsReady,
+  defaultStoreFrontFilter,
+  libraryGames = [],
+}: Params) {
   const [page, setPage] = useState(1);
-  const [sortMode, setSortMode] = useState<StoreSortMode>('newest');
+  const [sortMode, setSortMode] = useState<StoreSortMode>('relevance');
   const [genreFilter, setGenreFilter] = useState<string>('');
-  const [storeFrontFilter, setStoreFrontFilter] = useState<string>('latest');
+  const [storeFrontFilter, setStoreFrontFilter] = useState<string>(defaultStoreFrontFilter || 'latest');
   const [hideInLibrary, setHideInLibraryState] = useState<boolean>(readHideInLibrary);
   const { badgeFilter, setBadgeFilter: persistBadgeFilter, STORE_BADGE_FILTERS } = useStoreBadgeFilter();
   const setBadgeFilter = (filter: typeof badgeFilter) => {
@@ -61,6 +69,10 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady, libra
   useEffect(() => {
     if (!active || !settingsReady || observedSettingsRevision.current === settingsRevision) return;
     observedSettingsRevision.current = settingsRevision;
+    if (defaultStoreFrontFilter && defaultStoreFrontFilter !== prevStoreFrontFilter.current) {
+      prevStoreFrontFilter.current = defaultStoreFrontFilter;
+      setStoreFrontFilter(defaultStoreFrontFilter);
+    }
     setPage(1);
     trending.reset();
     if (activeQuery.trim()) {
@@ -70,7 +82,7 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady, libra
     }
     clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, settingsRevision, settingsReady]);
+  }, [active, settingsRevision, settingsReady, defaultStoreFrontFilter]);
 
   // Enrich genres for any result that doesn't have them yet.
   useEffect(() => {
@@ -144,12 +156,15 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady, libra
   }, [active, pageKey]);
 
   useEffect(() => {
-    if (!active || !settingsReady || activeQuery.trim()) return;
-    if (results.length < (page + 1) * STORE_ITEMS_PER_PAGE) {
+    if (!active || !settingsReady || activeQuery.trim() || trending.hasMore === false) return;
+    if (
+      filteredSortedResults.length < (page + 1) * STORE_ITEMS_PER_PAGE &&
+      results.length < MAX_FILTER_AUTO_LOAD_RESULTS
+    ) {
       void trending.loadNext(STORE_ITEMS_PER_PAGE * 2);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, page, results.length, activeQuery, settingsReady]);
+  }, [active, page, results.length, filteredSortedResults.length, activeQuery, settingsReady, trending.hasMore]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
@@ -253,11 +268,16 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady, libra
     enrichPcDrm(pageGames)
       .then((enriched) => {
         if (cancelled) return;
-        const map = new Map(enriched.map((game) => [String(game.appId), game.drm_protection]));
+        const map = new Map(enriched.map((game) => [String(game.appId), game]));
         setResults((current) =>
           current.map((game) => {
-            const drm = map.get(String(game.appId));
-            return drm === undefined ? game : { ...game, drm_protection: drm };
+            const updated = map.get(String(game.appId));
+            if (!updated) return game;
+            return {
+              ...game,
+              ...(updated.drm_protection === undefined ? {} : { drm_protection: updated.drm_protection }),
+              has_denuvo: Boolean(game.has_denuvo || updated.has_denuvo),
+            };
           })
         );
       })
@@ -303,6 +323,8 @@ export function useStoreCatalog({ active, settingsRevision, settingsReady, libra
         trending.reset();
         return;
       }
+      prevSortMode.current = 'relevance';
+      setSortMode('relevance');
       await search(query);
     } catch (error) {
       console.warn('Store search failed:', error);

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CACHE_FILE_NAME: &str = "store_search_cache.json";
-const CACHE_SCHEMA_VERSION: &str = "store-cache-v3";
+const CACHE_SCHEMA_VERSION: &str = "store-cache-v4";
 const FRESH_TTL_SECONDS: u64 = 4 * 60 * 60;
 const STALE_RETENTION_SECONDS: u64 = 14 * 24 * 60 * 60;
 /// Hard cap on cached queries: keeps the JSON file (rewritten on every `put`)
