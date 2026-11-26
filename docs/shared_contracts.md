@@ -388,9 +388,14 @@ alone (`recheck_state = unsupported` in `status.json`); a missing
 working either way.
 
 **Rule 5 — the owner banner is display-only.** `[library] owner_banner_apps`
-writes `LastOwner = owner_banner_steamid` for apps Aether spoofs, and
-`family/FamilyLenders.cpp` reads any foreign `LastOwner` as a real Steam Family
-lender. The classification must keep those two apart: the app is drawn as
+writes `LastOwner = owner_banner_steamid` for apps Aether spoofs (unless
+`owner_banner_steamid` matches the signed-in account, which `IsActiveBannerOwner`
+skips so the active account never lands in `LastOwner`), and
+`family/FamilyLenders.cpp` reads any non-Aether foreign `LastOwner` (verified
+against `<steam>\aethercore\owner_state.txt` via `ResolveEffectiveManifestOwner`)
+as a real Steam Family lender. `BootSteps` applies `AppManifestOwner`
+synchronously before `FamilyLenders::Init()` so a changed or disabled banner never
+leaves a stale `LastOwner` on disk to pose as a real share. The classification must keep those two apart: the app is drawn as
 shared (`luadata::IsFamilyShared`, `AppOwnership.steamId32`, the overview flag)
 but it is still one Aether provides. `core/FamilyClassification.h` is the single
 rule — a `RealShare` removes the app from `HasDepot`, a `Banner` does not — and

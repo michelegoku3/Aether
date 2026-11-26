@@ -271,7 +271,7 @@ bool IsOwnBannerAnswer(AppId app, std::uint32_t lender) {
         return false;
     const std::uint32_t evidence = lender != 0 ? lender : ac::family::LenderFor(app);
     return familyclass::IsOwnBannerStamp(app, evidence, settings->libraryOwnerBanner, settings->libraryOwnerBannerApps,
-                                         settings->libraryOwnerBannerSteamId);
+                                         settings->libraryOwnerBannerSteamId, credential::ReadActiveUserId());
 }
 
 // True when the family answer for this app is a licence Valve granted to another
@@ -330,6 +330,23 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
     // they have a non-zero package id.
     const bool spoofed = luadata::IsSpoofed(app);
     std::uint32_t familyLender = luadata::FamilyLender(app);
+    const std::uint32_t mapLender = ac::family::LenderFor(app);
+    const bool steamReportedFamily = result && out->existInPackageNums > 1 &&
+                                     out->releaseState == AppReleaseState::Released &&
+                                     (out->borrowed || out->familyShared);
+    if (!steamReportedFamily &&
+        familyclass::ShouldClearMapFamilyShare(luadata::IsMapDerivedFamilyShare(app),
+                                               luadata::IsFamilyShared(app) && !luadata::IsRealFamilyShare(app),
+                                               mapLender, IsOwnBannerAnswer(app, mapLender)) &&
+        luadata::ClearMapFamilyShare(app)) {
+        AC_LOG_INFO(
+            kModule,
+            "CheckAppOwnership: cleared stale map-derived family share for app %u (old_lender=%u, new_lender=%u).", app,
+            familyLender, mapLender);
+        familyLender = 0;
+        LicenseManager::RequestAppInPackage0(app);
+        LicenseManager::RequestLicenseRefresh();
+    }
     // Steam's CheckAppOwnership is not the family-sharing source: an installed
     // family game can answer "not provided" while the SteamUI still lists a
     // real lender. Fill the gap from the client's FamilyGroups data. A real
@@ -337,15 +354,12 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
     // missing lender. The licence stays Valve's: nothing below adds the app to
     // package 0.
     if (familyLender == 0) {
-        const std::uint32_t mapLender = ac::family::LenderFor(app);
         if (mapLender != 0 && mapLender != credential::ReadActiveUserId()) {
-            const bool rawFamilyWithLender = result && out->existInPackageNums > 1 &&
-                                             out->releaseState == AppReleaseState::Released &&
-                                             (out->borrowed || out->familyShared) && out->steamId32 != 0;
+            const bool rawFamilyWithLender = steamReportedFamily && out->steamId32 != 0;
             if (!rawFamilyWithLender) {
                 const bool ownBanner = IsOwnBannerAnswer(app, mapLender);
                 const bool wasFamilyShared = luadata::IsFamilyShared(app);
-                luadata::MarkFamilyShared(app, mapLender, ownBanner);
+                luadata::MarkFamilyShared(app, mapLender, ownBanner, /*fromSteam=*/false);
                 familyLender = mapLender;
                 if (!wasFamilyShared)
                     ac::appmanifest::RequestOwnerApply();
@@ -382,7 +396,7 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
             const std::uint32_t lender = out->steamId32 != 0 ? out->steamId32 : familyLender;
             const bool ownBanner = IsOwnBannerAnswer(app, lender);
             const bool newlyFamilyShared = !luadata::IsFamilyShared(app);
-            luadata::MarkFamilyShared(app, lender, ownBanner);
+            luadata::MarkFamilyShared(app, lender, ownBanner, steamReportedFamily);
             if (newlyFamilyShared) {
                 ac::appmanifest::RequestOwnerApply();
             }

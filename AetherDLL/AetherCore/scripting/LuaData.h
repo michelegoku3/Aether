@@ -61,6 +61,13 @@ bool IsSpoofed(steam::AppId appId);
 // Real family lender captured on the first family answer, or 0.
 std::uint32_t FamilyLender(steam::AppId appId);
 
+// True when appId's family share came solely from FamilyLenders rather than
+// Steam's CheckAppOwnership flags, and is therefore eligible for reconciliation.
+bool IsMapDerivedFamilyShare(steam::AppId appId);
+
+// Snapshot of every appId currently marked as a map-derived family share.
+std::vector<steam::AppId> MapDerivedFamilyAppIds();
+
 // Hex depot key for a depot, or nullopt if none/empty.
 std::optional<std::string> DepotKeyHex(steam::AppId depotId);
 
@@ -142,8 +149,13 @@ void MarkOwned(steam::AppId appId);
 // what the client draws, so HasDepot keeps providing the app.
 // `lenderAccountId` is the real owner from AppOwnership.steamId32; 0 means the
 // answer did not name one. `ownBanner` marks the family bit as Aether's own
-// cosmetic stamp instead of a licence.
-void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner);
+// cosmetic stamp instead of a licence. `fromSteam` records whether Steam's own
+// CheckAppOwnership flags observed the share (sticky) vs FamilyLenders fallback
+// (reconcilable if a stale manifest stamp clears).
+void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner, bool fromSteam = true);
+
+// Clears a map-derived family share so the app returns to normal classification.
+bool ClearMapFamilyShare(steam::AppId appId);
 
 // Flags appId as spoofed: Steam did not provide it and Aether owns the answer.
 void MarkSpoofed(steam::AppId appId);

@@ -18,10 +18,15 @@
 #include <vector>
 
 #include "core/AetherCoreState.h"
+#include "core/AppManifestOwner.h"
+#include "core/FamilyClassification.h"
 #include "core/Logger.h"
+#include "core/OwnerRecordPolicy.h"
+#include "core/Settings.h"
 #include "core/Workers.h"
 #include "credentials/SteamId.h"
 #include "hooks/license/LicenseManager.h"
+#include "scripting/LuaData.h"
 #include "utils/Paths.h"
 #include "utils/VdfText.h"
 #include "utils/WinFile.h"
@@ -97,9 +102,13 @@ void ReadAppTicketPackages(const std::string& localConfig,
 
 // Every installed app manifest can carry LastOwner. For a family-shared app
 // that is the real lender; the package id ties other apps in the same family
-// package to the same account when their own manifest has no LastOwner.
+// package to the same account when their own manifest has no LastOwner. Stale
+// Aether banner stamps recorded in owner_state.txt are filtered via
+// ResolveEffectiveManifestOwner so a banner switch never poses as a Valve share.
 void ReadLastOwners(const std::string& steamRoot, std::uint32_t activeAccount,
                     const std::unordered_map<steam::AppId, std::uint32_t>& appPackages,
+                    const std::unordered_map<steam::AppId, ac::appmanifest::OwnerRecord>& ownerRecords,
+                    const std::shared_ptr<const Settings>& settings,
                     std::unordered_map<steam::AppId, std::uint32_t>& directOwners,
                     std::unordered_map<std::uint32_t, std::uint32_t>& packageOwners, std::size_t& manifestCount) {
     std::vector<std::string> libraries;
@@ -136,10 +145,15 @@ void ReadLastOwners(const std::string& steamRoot, std::uint32_t activeAccount,
             if (!IsDigits(idText) || !ParseDecimal(idText, appId) || appId > 0xFFFFFFFF)
                 continue;
             ++manifestCount;
+            const auto app = static_cast<steam::AppId>(appId);
 
             const std::string manifest = ReadTextFile(entry.path().string());
             if (manifest.empty())
                 continue;
+
+            const auto recIt = ownerRecords.find(app);
+            std::uint32_t rawOwner = 0;
+            bool sawLastOwner = false;
 
             std::size_t lineStart = 0;
             while (lineStart <= manifest.size()) {
@@ -153,23 +167,42 @@ void ReadLastOwners(const std::string& steamRoot, std::uint32_t activeAccount,
                 std::string key;
                 std::string value;
                 if (ac::vdf::ParseLine(line, key, value) == ac::vdf::LineKind::KeyValue && IsLastOwnerKey(key)) {
+                    sawLastOwner = true;
                     std::uint64_t steamId = 0;
-                    if (ParseDecimal(value, steamId) && steamId != 0) {
-                        const auto owner = static_cast<std::uint32_t>(steamId);
-                        if (owner != activeAccount) {
-                            const auto app = static_cast<steam::AppId>(appId);
-                            directOwners[app] = owner;
-                            const auto package = appPackages.find(app);
-                            if (package != appPackages.end())
-                                packageOwners.emplace(package->second, owner);
-                        }
-                    }
+                    if (ParseDecimal(value, steamId) && steamId != 0)
+                        rawOwner = static_cast<std::uint32_t>(steamId);
                     break;
                 }
 
                 if (lineEnd == manifest.size())
                     break;
                 lineStart = lineEnd + 1;
+            }
+
+            if (!sawLastOwner && recIt == ownerRecords.end())
+                continue;
+
+            ac::appmanifest::ManifestOwnerEvidence evidence;
+            evidence.manifestLastOwner = rawOwner;
+            if (recIt != ownerRecords.end()) {
+                evidence.recorded = true;
+                evidence.record = recIt->second;
+            }
+            evidence.activeAccountId = activeAccount;
+            evidence.ownBannerNow = rawOwner != 0 && settings &&
+                                    ac::familyclass::IsOwnBannerStamp(
+                                        app, rawOwner, settings->libraryOwnerBanner, settings->libraryOwnerBannerApps,
+                                        settings->libraryOwnerBannerSteamId, activeAccount);
+
+            const std::uint32_t owner = ac::appmanifest::ResolveEffectiveManifestOwner(evidence);
+            if (owner != 0) {
+                directOwners[app] = owner;
+                const auto package = appPackages.find(app);
+                if (package != appPackages.end())
+                    packageOwners.emplace(package->second, owner);
+            } else if (rawOwner != 0 && rawOwner != activeAccount) {
+                AC_LOG_DEBUG(kModule, "App %u: ignored stale Aether LastOwner=%u (recorded=%llu).", app, rawOwner,
+                             static_cast<unsigned long long>(evidence.record.written));
             }
         }
     }
@@ -192,10 +225,14 @@ bool Refresh() {
     std::unordered_map<steam::AppId, std::uint32_t> appPackages;
     ReadAppTicketPackages(localConfig, appPackages);
 
+    const auto ownerRecords = ac::appmanifest::LoadOwnerRecordsSnapshot();
+    const auto settings = Settings::Snapshot();
+
     std::unordered_map<steam::AppId, std::uint32_t> directOwners;
     std::unordered_map<std::uint32_t, std::uint32_t> packageOwners;
     std::size_t manifestCount = 0;
-    ReadLastOwners(g_state.steamInstallPath, activeAccount, appPackages, directOwners, packageOwners, manifestCount);
+    ReadLastOwners(g_state.steamInstallPath, activeAccount, appPackages, ownerRecords, settings, directOwners,
+                   packageOwners, manifestCount);
 
     std::unordered_map<steam::AppId, std::uint32_t> lenders;
     for (const auto& [app, package] : appPackages) {
@@ -213,14 +250,37 @@ bool Refresh() {
 
     bool changed = false;
     std::size_t lenderCount = 0;
+    std::unordered_map<steam::AppId, std::uint32_t> lenderSnapshot;
     {
         std::unique_lock lock(s_mutex);
         changed = lenders != s_lenders;
         s_lenders = std::move(lenders);
         s_ready = true;
         lenderCount = s_lenders.size();
+        lenderSnapshot = s_lenders;
     }
-    if (changed)
+
+    bool reconciled = false;
+    for (const steam::AppId app : ac::luadata::MapDerivedFamilyAppIds()) {
+        const auto it = lenderSnapshot.find(app);
+        const std::uint32_t currentLender = it != lenderSnapshot.end() ? it->second : 0;
+        const bool ownBannerNow =
+            settings && ac::familyclass::IsOwnBannerStamp(app, currentLender, settings->libraryOwnerBanner,
+                                                          settings->libraryOwnerBannerApps,
+                                                          settings->libraryOwnerBannerSteamId, activeAccount);
+        if (ac::familyclass::ShouldClearMapFamilyShare(true, !ac::luadata::IsRealFamilyShare(app), currentLender,
+                                                       ownBannerNow) &&
+            ac::luadata::ClearMapFamilyShare(app)) {
+            AC_LOG_INFO(kModule,
+                        "App %u: cleared map-derived family share after lender refresh (lender=%u, own_banner=%d); "
+                        "re-queuing package-0 license.",
+                        app, currentLender, ownBannerNow ? 1 : 0);
+            ac::hooks::LicenseManager::RequestAppInPackage0(app);
+            reconciled = true;
+        }
+    }
+
+    if (changed || reconciled)
         ac::hooks::LicenseManager::RequestLicenseRefresh();
 
     AC_LOG_INFO(kModule, "Family lenders: %zu app(s), %zu ticket(s), %zu manifest(s).", lenderCount, appPackages.size(),

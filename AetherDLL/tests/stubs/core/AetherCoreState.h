@@ -36,6 +36,7 @@ struct AetherCoreState {
         std::unordered_set<steam::AppId> bannerFamilyAppIds;
         std::unordered_set<steam::AppId> spoofedAppIds;
         std::unordered_map<steam::AppId, std::uint32_t> familyLenderAppIds;
+        std::unordered_set<steam::AppId> mapDerivedFamilyAppIds;
         std::unordered_set<steam::AppId> libraryAppIds;
         struct FileContributions {
             std::unordered_set<steam::AppId> depots;

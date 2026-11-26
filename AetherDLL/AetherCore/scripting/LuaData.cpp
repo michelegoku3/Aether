@@ -115,6 +115,17 @@ std::uint32_t FamilyLender(steam::AppId appId) {
     return it != g_state.lua.familyLenderAppIds.end() ? it->second : 0;
 }
 
+bool IsMapDerivedFamilyShare(steam::AppId appId) {
+    std::shared_lock lock(g_state.lua.mutex);
+    return g_state.lua.mapDerivedFamilyAppIds.count(appId) > 0;
+}
+
+std::vector<steam::AppId> MapDerivedFamilyAppIds() {
+    std::shared_lock lock(g_state.lua.mutex);
+    return std::vector<steam::AppId>(g_state.lua.mapDerivedFamilyAppIds.begin(),
+                                     g_state.lua.mapDerivedFamilyAppIds.end());
+}
+
 std::optional<std::string> DepotKeyHex(steam::AppId depotId) {
     std::shared_lock lock(g_state.lua.mutex);
     auto it = g_state.lua.depotKeys.find(depotId);
@@ -282,12 +293,13 @@ void MarkOwned(steam::AppId appId) {
     auto& lua = g_state.lua;
     lua.familySharedAppIds.erase(appId);
     lua.bannerFamilyAppIds.erase(appId);
+    lua.mapDerivedFamilyAppIds.erase(appId);
     lua.spoofedAppIds.erase(appId);
     lua.familyLenderAppIds.erase(appId);
     lua.ownedAppIds.insert(appId);
 }
 
-void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner) {
+void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner, bool fromSteam) {
     std::unique_lock lock(g_state.lua.mutex);
     auto& lua = g_state.lua;
     lua.ownedAppIds.erase(appId);
@@ -297,10 +309,25 @@ void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ow
         lua.bannerFamilyAppIds.insert(appId);
     else
         lua.bannerFamilyAppIds.erase(appId);
+    if (fromSteam)
+        lua.mapDerivedFamilyAppIds.erase(appId);
+    else
+        lua.mapDerivedFamilyAppIds.insert(appId);
     if (lenderAccountId != 0)
         lua.familyLenderAppIds[appId] = lenderAccountId;
     else
         lua.familyLenderAppIds.erase(appId);
+}
+
+bool ClearMapFamilyShare(steam::AppId appId) {
+    std::unique_lock lock(g_state.lua.mutex);
+    auto& lua = g_state.lua;
+    if (lua.mapDerivedFamilyAppIds.erase(appId) == 0)
+        return false;
+    lua.familySharedAppIds.erase(appId);
+    lua.bannerFamilyAppIds.erase(appId);
+    lua.familyLenderAppIds.erase(appId);
+    return true;
 }
 
 void MarkSpoofed(steam::AppId appId) {
@@ -309,6 +336,7 @@ void MarkSpoofed(steam::AppId appId) {
     lua.ownedAppIds.erase(appId);
     lua.familySharedAppIds.erase(appId);
     lua.bannerFamilyAppIds.erase(appId);
+    lua.mapDerivedFamilyAppIds.erase(appId);
     lua.familyLenderAppIds.erase(appId);
     lua.spoofedAppIds.insert(appId);
 }
@@ -337,6 +365,7 @@ void RecordDepot(steam::AppId depotId, const std::string& hexKey) {
     lua.ownedAppIds.erase(depotId);
     lua.familySharedAppIds.erase(depotId);
     lua.bannerFamilyAppIds.erase(depotId);
+    lua.mapDerivedFamilyAppIds.erase(depotId);
     lua.spoofedAppIds.erase(depotId);
     lua.familyLenderAppIds.erase(depotId);
 
@@ -411,6 +440,7 @@ void UnloadFile(const std::string& path) {
         lua.ownedAppIds.erase(id);
         lua.familySharedAppIds.erase(id);
         lua.bannerFamilyAppIds.erase(id);
+        lua.mapDerivedFamilyAppIds.erase(id);
         lua.spoofedAppIds.erase(id);
         lua.familyLenderAppIds.erase(id);
     }

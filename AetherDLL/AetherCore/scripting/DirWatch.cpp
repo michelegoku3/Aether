@@ -22,7 +22,9 @@
 #include "core/AppManifestOwner.h"
 #include "core/Constants.h"
 #include "core/Logger.h"
+#include "core/Settings.h"
 #include "diagnostics/StatusWriter.h"
+#include "family/FamilyLenders.h"
 #include "hooks/ipc/PipeWatch.h"
 #include "hooks/license/LicenseManager.h"
 #include "hooks/steamui/AppOverviewHooks.h"
@@ -451,8 +453,24 @@ void Run() {
     while (s_watch.running.load() && !g_state.shuttingDown.load()) {
         const auto previousSettings = Settings::Snapshot();
         Settings::ReloadIfModified(g_state.configPath);
-        if (Settings::Snapshot() != previousSettings)
+        const auto currentSettings = Settings::Snapshot();
+        if (currentSettings != previousSettings) {
             status::Write();
+            const bool libraryChanged =
+                !previousSettings || !currentSettings ||
+                previousSettings->libraryOwnerBanner != currentSettings->libraryOwnerBanner ||
+                previousSettings->libraryOwnerBannerApps != currentSettings->libraryOwnerBannerApps ||
+                previousSettings->libraryOwnerBannerSteamId != currentSettings->libraryOwnerBannerSteamId;
+            if (libraryChanged && currentSettings) {
+                AC_LOG_INFO(kModule,
+                            "Library banner settings reloaded (enabled=%d, apps=%zu, owner=%llu); re-applying "
+                            "owner policy and refreshing family lenders.",
+                            currentSettings->libraryOwnerBanner ? 1 : 0, currentSettings->libraryOwnerBannerApps.size(),
+                            static_cast<unsigned long long>(currentSettings->libraryOwnerBannerSteamId));
+                ac::appmanifest::RequestOwnerApply();
+                ac::family::RequestRefresh();
+            }
+        }
         if (count == 0) {
             Sleep(1000);
             continue;

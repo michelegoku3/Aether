@@ -115,4 +115,21 @@ void FamilyBannerTest() {
     // banner stamp or Valve family license.
     CHECK(!IsOwnBannerStamp(1868140, kThisLogin, true, listed, 76561197960265728ull + kThisLogin, kThisLogin));
     CHECK(!IsValveFamilyLicense(1868140, kThisLogin, kThisLogin, true, listed, 76561197960265728ull + kThisLogin));
+
+    // --- LuaData map-derived family reconciliation ---------------------------
+    ac::luadata::MarkFamilyShared(kApp, 12345, /*ownBanner=*/false, /*fromSteam=*/false);
+    CHECK(ac::luadata::IsMapDerivedFamilyShare(kApp));
+    CHECK(ac::luadata::IsRealFamilyShare(kApp));
+    CHECK(ac::luadata::MapDerivedFamilyAppIds() == std::vector<std::uint32_t>{kApp});
+    CHECK(ac::luadata::ClearMapFamilyShare(kApp));
+    CHECK(!ac::luadata::IsMapDerivedFamilyShare(kApp));
+    CHECK(!ac::luadata::IsFamilyShared(kApp));
+    CHECK(ac::luadata::HasDepot(kApp));
+
+    // A Steam-confirmed share clears the map-derived flag so it stays sticky.
+    ac::luadata::MarkFamilyShared(kApp, 12345, /*ownBanner=*/false, /*fromSteam=*/false);
+    ac::luadata::MarkFamilyShared(kApp, 12345, /*ownBanner=*/false, /*fromSteam=*/true);
+    CHECK(!ac::luadata::IsMapDerivedFamilyShare(kApp));
+    CHECK(!ac::luadata::ClearMapFamilyShare(kApp));
+    CHECK(ac::luadata::IsRealFamilyShare(kApp));
 }

@@ -20,6 +20,7 @@
 #include "core/Settings.h"
 #include "core/Workers.h"
 #include "credentials/SteamId.h"
+#include "family/FamilyLenders.h"
 #include "scripting/LuaData.h"
 #include "utils/SteamLibraryPaths.h"
 #include "utils/Strings.h"
@@ -205,105 +206,121 @@ OwnerPolicyStats ApplyInstalledAppOwners() {
             bannerApps.insert(appId);
     }
 
-    std::lock_guard<std::mutex> passLock(s_passMutex);
-    OwnerRecords records = LoadRecords();
-    bool recordsDirty = false;
-    // One login owns the whole pass; reading it per manifest would hit the
-    // registry once per app for the same answer.
-    const std::uint64_t activeSteamId = steamid::GetActiveSteamId64();
+    std::size_t appliedMutations = 0;
+    {
+        std::lock_guard<std::mutex> passLock(s_passMutex);
+        OwnerRecords records = LoadRecords();
+        bool recordsDirty = false;
+        // One login owns the whole pass; reading it per manifest would hit the
+        // registry once per app for the same answer.
+        const std::uint64_t activeSteamId = steamid::GetActiveSteamId64();
 
-    for (const std::string& dir : steamlibrary::SteamAppsDirs(g_state.steamInstallPath)) {
-        std::error_code ec;
-        std::filesystem::directory_iterator it(winfile::ToPath(dir), ec);
-        if (ec) {
-            ++stats.errors;
-            AC_LOG_DEBUG(kModule, "Cannot enumerate '%s' (%d).", dir.c_str(), ec.value());
-            continue;
-        }
-        const std::filesystem::directory_iterator end;
-        for (; it != end; it.increment(ec)) {
+        for (const std::string& dir : steamlibrary::SteamAppsDirs(g_state.steamInstallPath)) {
+            std::error_code ec;
+            std::filesystem::directory_iterator it(winfile::ToPath(dir), ec);
             if (ec) {
                 ++stats.errors;
-                break;
-            }
-            if (!it->is_regular_file(ec) || ec)
-                continue;
-            const std::string name = ac::strings::Narrow(it->path().filename().wstring());
-            const steam::AppId appId = AppIdFromManifestName(name);
-            if (appId == 0)
-                continue;
-
-            // Apps Aether spoofs now, apps Steam reports as family-shared, plus
-            // apps Aether wrote earlier (their .lua may since have been
-            // removed). A manifest with no record and no classification is a
-            // real Steam record: skip it before reading anything.
-            const bool managed = luadata::HasDepot(appId);
-            const bool familyShared = luadata::IsFamilyShared(appId);
-            const auto record = records.find(appId);
-            if (!managed && !familyShared && record == records.end())
-                continue;
-
-            ++stats.scanned;
-            const std::string path = ac::strings::Narrow(it->path().wstring());
-            std::string content;
-            if (!ReadTextFile(path, content)) {
-                ++stats.errors;
-                AC_LOG_DEBUG(kModule, "Cannot read appmanifest_%u.acf; leaving it untouched.", appId);
+                AC_LOG_DEBUG(kModule, "Cannot enumerate '%s' (%d).", dir.c_str(), ec.value());
                 continue;
             }
+            const std::filesystem::directory_iterator end;
+            for (; it != end; it.increment(ec)) {
+                if (ec) {
+                    ++stats.errors;
+                    break;
+                }
+                if (!it->is_regular_file(ec) || ec)
+                    continue;
+                const std::string name = ac::strings::Narrow(it->path().filename().wstring());
+                const steam::AppId appId = AppIdFromManifestName(name);
+                if (appId == 0)
+                    continue;
 
-            OwnerContext ctx;
-            ctx.bannerEnabled = bannerEnabled;
-            ctx.managed = managed;
-            ctx.familyShared = familyShared;
-            ctx.listed = bannerApps.count(appId) != 0;
-            ctx.bannerSteamId = bannerSteamId;
-            ctx.activeSteamId = activeSteamId;
-            ctx.recorded = record != records.end();
-            if (ctx.recorded)
-                ctx.record = record->second;
-            ctx.currentLastOwner = ReadLastOwner(content);
-            ctx.updateRunning = (ReadStateFlags(content) & kAppStateUpdatingMask) != 0;
+                // Apps Aether spoofs now, apps Steam reports as family-shared, plus
+                // apps Aether wrote earlier (their .lua may since have been
+                // removed). A manifest with no record and no classification is a
+                // real Steam record: skip it before reading anything.
+                const bool managed = luadata::HasDepot(appId);
+                const bool familyShared = luadata::IsFamilyShared(appId);
+                const auto record = records.find(appId);
+                if (!managed && !familyShared && record == records.end())
+                    continue;
 
-            // The memo is consulted against what the policy wants now, not
-            // against the raw app id: a settings or .lua change that alters the
-            // plan must still be applied in this session.
-            OwnerContext probe = ctx;
-            probe.updateRunning = false;
-            probe.alreadyApplied = false;
-            const OwnerPlan intended = PlanOwnerAction(probe);
-            ctx.alreadyApplied = AlreadyApplied(appId, intended);
+                ++stats.scanned;
+                const std::string path = ac::strings::Narrow(it->path().wstring());
+                std::string content;
+                if (!ReadTextFile(path, content)) {
+                    ++stats.errors;
+                    AC_LOG_DEBUG(kModule, "Cannot read appmanifest_%u.acf; leaving it untouched.", appId);
+                    continue;
+                }
 
-            const OwnerPlan plan = PlanOwnerAction(ctx);
-            if (intended.action != OwnerAction::Skip && plan.action == OwnerAction::Skip)
-                ++stats.deferred;
-            if (ApplyToManifest(path, appId, ctx, plan, content, records, recordsDirty, stats) &&
-                plan.action != OwnerAction::Skip) {
-                RememberApplied(appId, plan);
+                OwnerContext ctx;
+                ctx.bannerEnabled = bannerEnabled;
+                ctx.managed = managed;
+                ctx.familyShared = familyShared;
+                ctx.listed = bannerApps.count(appId) != 0;
+                ctx.bannerSteamId = bannerSteamId;
+                ctx.activeSteamId = activeSteamId;
+                ctx.recorded = record != records.end();
+                if (ctx.recorded)
+                    ctx.record = record->second;
+                ctx.currentLastOwner = ReadLastOwner(content);
+                ctx.updateRunning = (ReadStateFlags(content) & kAppStateUpdatingMask) != 0;
+
+                if (bannerEnabled && ctx.listed && bannerSteamId != 0 && activeSteamId != 0 &&
+                    bannerSteamId == activeSteamId) {
+                    AC_LOG_DEBUG_ONCE(
+                        kModule,
+                        "App %u: owner_banner_steamid (%llu) matches active account; leaving LastOwner unstamped.",
+                        appId, static_cast<unsigned long long>(bannerSteamId));
+                }
+
+                // The memo is consulted against what the policy wants now, not
+                // against the raw app id: a settings or .lua change that alters the
+                // plan must still be applied in this session.
+                OwnerContext probe = ctx;
+                probe.updateRunning = false;
+                probe.alreadyApplied = false;
+                const OwnerPlan intended = PlanOwnerAction(probe);
+                ctx.alreadyApplied = AlreadyApplied(appId, intended);
+
+                const OwnerPlan plan = PlanOwnerAction(ctx);
+                if (intended.action != OwnerAction::Skip && plan.action == OwnerAction::Skip)
+                    ++stats.deferred;
+                if (ApplyToManifest(path, appId, ctx, plan, content, records, recordsDirty, stats) &&
+                    plan.action != OwnerAction::Skip) {
+                    RememberApplied(appId, plan);
+                }
             }
         }
-    }
 
-    // Records written before the policy knew the signed-in account may still
-    // carry it as the restorable original. Drop it so a later restore cannot
-    // recreate the stamp that hid the family banner.
-    if (activeSteamId != 0) {
-        std::size_t cleared = 0;
-        for (auto& entry : records) {
-            OwnerRecord& record = entry.second;
-            if (record.originalKnown && record.original == activeSteamId) {
-                record.originalKnown = false;
-                record.original = 0;
-                recordsDirty = true;
-                ++cleared;
+        // Records written before the policy knew the signed-in account may still
+        // carry it as the restorable original. Drop it so a later restore cannot
+        // recreate the stamp that hid the family banner.
+        if (activeSteamId != 0) {
+            std::size_t cleared = 0;
+            for (auto& entry : records) {
+                OwnerRecord& record = entry.second;
+                if (record.originalKnown && record.original == activeSteamId) {
+                    record.originalKnown = false;
+                    record.original = 0;
+                    recordsDirty = true;
+                    ++cleared;
+                }
             }
+            if (cleared != 0)
+                AC_LOG_INFO(kModule, "Owner records: cleared %zu active-account original value(s).", cleared);
         }
-        if (cleared != 0)
-            AC_LOG_INFO(kModule, "Owner records: cleared %zu active-account original value(s).", cleared);
+
+        if (recordsDirty)
+            SaveRecords(records);
+
+        appliedMutations = stats.applied + stats.removed;
     }
 
-    if (recordsDirty)
-        SaveRecords(records);
+    if (appliedMutations != 0)
+        ac::family::RequestRefresh();
 
     if (stats.applied != 0 || stats.removed != 0 || stats.deferred != 0 || stats.errors != 0) {
         AC_LOG_INFO(kModule, "Owner policy: scanned=%zu set=%zu removed=%zu unchanged=%zu deferred=%zu errors=%zu.",
@@ -326,15 +343,17 @@ void RequestOwnerApply() {
     }
 }
 
-void ApplyOwnersAtStartup() {
-    if (!workers::Submit([] {
-            // A new session starts with nothing settled: the boot pass is the
-            // first to read what Steam wrote for this login.
-            ForgetApplied();
-            ApplyInstalledAppOwners();
-        })) {
-        AC_LOG_DEBUG(kModule, "Startup owner pass skipped: worker queue unavailable.");
-    }
+OwnerPolicyStats ApplyOwnersAtStartup() {
+    // A new session starts with nothing settled: this boot pass runs
+    // synchronously before FamilyLenders and Steam read appmanifests so any stale
+    // LastOwner from a previous banner config cannot read as a real family share.
+    ForgetApplied();
+    return ApplyInstalledAppOwners();
+}
+
+std::unordered_map<steam::AppId, OwnerRecord> LoadOwnerRecordsSnapshot() {
+    std::lock_guard<std::mutex> passLock(s_passMutex);
+    return LoadRecords();
 }
 
 } // namespace ac::appmanifest

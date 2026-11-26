@@ -749,7 +749,13 @@ the one case where the family flag is Aether's own stamp: `core/FamilyClassifica
 separates that `Banner` from a `RealShare`, so the app keeps the shared look
 while `luadata::IsRealFamilyShare` stays false and every `HasDepot` consumer —
 depot keys, manifest overrides, the cloud gate and the achievement page — keeps
-working. `status.json` reports the populations separately
+working. `AppManifestOwner::ApplyOwnersAtStartup()` runs synchronously before
+hook install (`FamilyLenders::Init()`), skips stamping when
+`owner_banner_steamid` matches the active login (`IsActiveBannerOwner`), and
+`FamilyLenders` consults `owner_state.txt` (`ResolveEffectiveManifestOwner`) so a
+stale banner stamp never poses as a Valve licence; map-derived `RealShare`
+entries reconcile (`ShouldClearMapFamilyShare`) if `FamilyLenders` drops them.
+`status.json` reports the populations separately
 (`membership_owned`, `membership_spoofed`, `membership_family_shared`,
 `membership_banner_family`, `membership_library_roots`, `package0_app_ids`) so a
 support log can tell "not seeded" from "seeded but not classified".

@@ -313,19 +313,7 @@ void StartSafetyNetsStage() {
     //      Depends on: aethercore dir (desk_path.cfg) + steamInstallPath.
     ac::hooks::ManifestRestore::RestoreMissingManifestsAtStartup();
 
-    // 10c. Owner policy: Steam derives the "From the library of <account>"
-    //      banner from AppState.LastOwner, the account that last
-    //      installed/updated the app. Lua apps are installed by whichever
-    //      account was active at the time, so a later login shows a bogus
-    //      shared-library banner. By default the entry is dropped; opt-in
-    //      appids get it set to the configured owner account.
-    //      Runs before Steam builds this session's app list (async, once per
-    //      process); MarkLicenseAsChanged and DirWatch repeat it on login and
-    //      on every manifest rewrite.
-    //      Depends on: lua data (HasDepot) + steamInstallPath + [library].
-    ac::appmanifest::ApplyOwnersAtStartup();
-
-    // 10d. InstalledDepots repair: an ACF that names a manifest GID with no
+    // 10c. InstalledDepots repair: an ACF that names a manifest GID with no
     //      local file makes every download die with `Access Denied` (Steam
     //      reports "No connection") because the delta is computed from that
     //      GID. Restores the GID of the manifest the depot does have, once per
@@ -387,6 +375,10 @@ void InitThreadLogic(HMODULE self) {
     ctx.patternsOk = InitPatternsStage(ctx);
     SeedAbiStage();
     InitLuaStage();
+    // Apply owner policy synchronously after Lua init and before hook install
+    // (FamilyLenders::Init) and Steam's manifest reads so stale LastOwner
+    // banner stamps cannot look like real Valve Steam Family licenses.
+    ac::appmanifest::ApplyOwnersAtStartup();
     InstallHooksStage();
     StartSafetyNetsStage();
     StartWatchersStage(ctx);

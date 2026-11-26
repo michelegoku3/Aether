@@ -1,6 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <unordered_map>
+
+#include "core/OwnerRecordPolicy.h"
+#include "core/SteamTypes.h"
 
 // ---------------------------------------------------------------------------
 // AppManifestOwner — keep `AppState.LastOwner` out of Aether's attribution.
@@ -64,8 +68,13 @@ OwnerPolicyStats ApplyInstalledAppOwners();
 // job.
 void RequestOwnerApply();
 
-// One boot-time pass. Must happen before Steam loads app state for the session;
-// the post-login pass covers the rest.
-void ApplyOwnersAtStartup();
+// One boot-time pass. Must happen synchronously before FamilyLenders reads
+// manifests and before Steam loads app state for the session; post-login and
+// config/manifest watchers follow with RequestOwnerApply.
+OwnerPolicyStats ApplyOwnersAtStartup();
+
+// Read-only snapshot of <steam>\aethercore\owner_state.txt, mapping each app id
+// to what Aether last wrote and any captured pre-Aether LastOwner.
+std::unordered_map<steam::AppId, OwnerRecord> LoadOwnerRecordsSnapshot();
 
 } // namespace ac::appmanifest
