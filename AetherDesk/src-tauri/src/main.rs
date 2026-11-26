@@ -5,6 +5,7 @@
 
 use tauri::Manager;
 
+mod achievements;
 mod application;
 mod commands;
 mod core;
