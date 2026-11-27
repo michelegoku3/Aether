@@ -69,6 +69,7 @@ int main(int argc, char** argv) {
         {"family_lender", FamilyLenderTest},
         {"pattern_state", PatternStateParseTest},
         {"pattern_sidecar", PatternSidecarTest},
+        {"signature_scan", SignatureScanTest},
 #ifdef AETHER_HAVE_PROTO
         {"achievement_service", AchievementServiceWire},
 #endif

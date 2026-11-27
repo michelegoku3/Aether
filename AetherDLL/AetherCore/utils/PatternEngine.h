@@ -33,6 +33,12 @@ bool ReloadModuleIfMissing(const std::string& module);
 // longer matches (the function moved) — callers must treat null as "skip".
 void* ResolveAddress(const std::string& funcName, const std::string& module, HMODULE hModule);
 
+// Resolves funcName from the loaded pattern table, or scans executable PE
+// sections for a unique match of fallbackSig when the entry is absent from
+// that table. Sets *resolvedByScan when provided.
+void* ResolveOrScanAddress(const std::string& funcName, const std::string& module, HMODULE hModule,
+                           const char* fallbackSig, bool* resolvedByScan = nullptr);
+
 bool HasModule(const std::string& module);
 
 } // namespace ac::pattern

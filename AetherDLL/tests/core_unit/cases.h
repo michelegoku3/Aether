@@ -133,3 +133,4 @@ void FamilyBannerTest();
 void FamilyLenderTest();
 void PatternStateParseTest();
 void PatternSidecarTest();
+void SignatureScanTest();

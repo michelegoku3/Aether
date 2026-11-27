@@ -4,6 +4,8 @@
 #include "core/Logger.h"
 #include "utils/PatternEngine.h"
 #include "utils/SignatureCodec.h"
+#include "utils/SignatureScan.h"
+#include <algorithm>
 #include <psapi.h>
 #include <vector>
 #pragma comment(lib, "Psapi.lib")
@@ -112,6 +114,129 @@ void* ResolveAddress(const std::string& funcName, const std::string& module, HMO
     }
 
     AC_LOG_DEBUG(kModule, "'%s' (%s) -> 0x%p", funcName.c_str(), module.c_str(), static_cast<void*>(target));
+    return target;
+}
+
+void* ResolveOrScanAddress(const std::string& funcName, const std::string& module, HMODULE hModule,
+                           const char* fallbackSig, bool* resolvedByScan) {
+    if (resolvedByScan) {
+        *resolvedByScan = false;
+    }
+
+    bool tableHasEntry = false;
+    {
+        std::shared_lock lock(g_state.patterns.mutex);
+        if (PatternIndex* index = IndexFor(module)) {
+            std::string rvaStr, sigStr;
+            tableHasEntry = FindEntry(*index, funcName, rvaStr, sigStr) ||
+                            FindEntry(*index, "KeyValues_" + funcName, rvaStr, sigStr);
+        }
+    }
+
+    if (tableHasEntry) {
+        return ResolveAddress(funcName, module, hModule);
+    }
+
+    if (!fallbackSig || fallbackSig[0] == '\0' || !hModule) {
+        AC_LOG_WARN(kModule, "'%s' not found in %s patterns (no fallback signature).", funcName.c_str(),
+                    module.c_str());
+        g_state.hookManager.RecordMissed(funcName, MissReason::PatternUnresolved,
+                                         "missing from pattern table and no fallback signature");
+        return nullptr;
+    }
+
+    std::vector<std::uint8_t> bytes;
+    std::string mask;
+    if (!ParseSignature(fallbackSig, bytes, mask)) {
+        AC_LOG_WARN(kModule, "Malformed fallback signature for '%s'.", funcName.c_str());
+        g_state.hookManager.RecordMissed(funcName, MissReason::PatternUnresolved, "malformed fallback signature");
+        return nullptr;
+    }
+
+    MODULEINFO modInfo{};
+    if (!GetModuleInformation(GetCurrentProcess(), hModule, &modInfo, sizeof(modInfo))) {
+        AC_LOG_ERROR(kModule, "GetModuleInformation failed for %s.", module.c_str());
+        return nullptr;
+    }
+
+    const auto* modBase = static_cast<const std::uint8_t*>(modInfo.lpBaseOfDll);
+    if (!modBase || modInfo.SizeOfImage < sizeof(IMAGE_DOS_HEADER)) {
+        return nullptr;
+    }
+
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(modBase);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0 ||
+        static_cast<std::size_t>(dos->e_lfanew) + sizeof(IMAGE_NT_HEADERS) > modInfo.SizeOfImage) {
+        AC_LOG_WARN(kModule, "Invalid PE headers while scanning %s for '%s'.", module.c_str(), funcName.c_str());
+        return nullptr;
+    }
+
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(modBase + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) {
+        AC_LOG_WARN(kModule, "Invalid NT signature while scanning %s for '%s'.", module.c_str(), funcName.c_str());
+        return nullptr;
+    }
+
+    const auto* sections = IMAGE_FIRST_SECTION(nt);
+    const std::size_t secEnd = static_cast<std::size_t>(
+        reinterpret_cast<const std::uint8_t*>(sections + nt->FileHeader.NumberOfSections) - modBase);
+    if (secEnd > modInfo.SizeOfImage) {
+        return nullptr;
+    }
+
+    const std::uint8_t* uniqueMatch = nullptr;
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+        const auto& sec = sections[i];
+        if ((sec.Characteristics & IMAGE_SCN_MEM_EXECUTE) == 0) {
+            continue;
+        }
+        const std::size_t va = sec.VirtualAddress;
+        const std::size_t vsize = sec.Misc.VirtualSize;
+        if (va >= modInfo.SizeOfImage || vsize == 0) {
+            continue;
+        }
+        const std::size_t scanLen = (std::min)(vsize, static_cast<std::size_t>(modInfo.SizeOfImage) - va);
+        const ScanResult res = FindUniqueSignatureMatch(modBase + va, scanLen, bytes, mask);
+        if (res.status == ScanStatus::Ambiguous) {
+            AC_LOG_WARN(kModule, "Fallback signature for '%s' in %s is ambiguous; skipping.", funcName.c_str(),
+                        module.c_str());
+            g_state.hookManager.RecordMissed(funcName, MissReason::PatternUnresolved,
+                                             "fallback signature matched multiple locations");
+            return nullptr;
+        }
+        if (res.status == ScanStatus::Unique) {
+            if (uniqueMatch != nullptr) {
+                AC_LOG_WARN(kModule, "Fallback signature for '%s' in %s matched across sections; skipping.",
+                            funcName.c_str(), module.c_str());
+                g_state.hookManager.RecordMissed(funcName, MissReason::PatternUnresolved,
+                                                 "fallback signature matched multiple sections");
+                return nullptr;
+            }
+            uniqueMatch = modBase + va + res.offset;
+        }
+    }
+
+    if (!uniqueMatch) {
+        AC_LOG_WARN(kModule, "Fallback signature for '%s' not found in executable sections of %s.", funcName.c_str(),
+                    module.c_str());
+        g_state.hookManager.RecordMissed(funcName, MissReason::PatternUnresolved,
+                                         "fallback signature not found in module");
+        return nullptr;
+    }
+
+    auto* target = const_cast<std::uint8_t*>(uniqueMatch);
+    std::string sentinelDetail;
+    const auto verdict = abi::sentinel::Verify(funcName, target, hModule, &sentinelDetail);
+    if (!abi::sentinel::Accepted(verdict)) {
+        g_state.hookManager.RecordMissed(funcName, MissReason::SentinelRejected, sentinelDetail);
+        return nullptr;
+    }
+
+    if (resolvedByScan) {
+        *resolvedByScan = true;
+    }
+    AC_LOG_INFO(kModule, "'%s' (%s) resolved via signature scan -> 0x%p", funcName.c_str(), module.c_str(),
+                static_cast<void*>(target));
     return target;
 }
 
