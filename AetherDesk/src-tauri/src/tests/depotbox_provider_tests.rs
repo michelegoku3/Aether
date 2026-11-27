@@ -1,7 +1,9 @@
 use std::io::Write;
 
 use crate::manifest::package::ManifestPackageExtractor;
-use crate::providers::depotbox::{classify_status, describe_api_error, DepotBoxClient, JobPhase};
+use crate::providers::depotbox::{
+    classify_status, describe_api_error, parse_status, DepotBoxClient, JobPhase,
+};
 use crate::providers::manifest_source::ManifestSource;
 
 /// One Lua pin plus its manifest, in the layout DepotBox packages use.
@@ -78,6 +80,81 @@ fn extracts_the_package_zip_output() {
         "70_1234567890123456789.manifest"
     );
     assert_eq!(package.manifest_files[0].bytes, b"manifest-bytes");
+}
+
+/// The documented shape is an array of strings, but the live service sends log
+/// objects; that difference used to abort the whole download.
+#[test]
+fn parses_a_processing_status_whose_logs_are_objects() {
+    let body = r#"{"status":"processing","message":"Fetching depot keys...","appId":"3618390","gameName":"Gamblers Table","logs":[{"timestamp":"2026-11-27T19:54:12Z","level":"info","message":"Fetching depot keys"},{"step":"packaging","detail":"Writing manifests"}]}"#;
+    let status = parse_status(body).unwrap();
+    assert_eq!(status.status, "processing");
+    assert_eq!(status.message.as_deref(), Some("Fetching depot keys..."));
+    assert_eq!(status.game_name.as_deref(), Some("Gamblers Table"));
+    assert_eq!(
+        status.logs,
+        Some(vec![
+            "Fetching depot keys".to_string(),
+            "Writing manifests".to_string()
+        ])
+    );
+}
+
+#[test]
+fn parses_log_entries_of_every_shape() {
+    let body = r#"{"status":"processing","logs":["plain step",{"message":"object step"},42,{"unsupported":true}]}"#;
+    let status = parse_status(body).unwrap();
+    assert_eq!(
+        status.logs,
+        Some(vec![
+            "plain step".to_string(),
+            "object step".to_string(),
+            "42".to_string(),
+            r#"{"unsupported":true}"#.to_string()
+        ])
+    );
+}
+
+#[test]
+fn parses_a_completed_status_with_a_zip_link() {
+    let body = r#"{"status":"completed_with_warnings","message":"Done.","appId":"70","gameName":"Half-Life","logs":["Fetching depot keys...","Packaging manifests...","Done."],"finalUserZipName":"Half-Life-70.zip","isBatch":false,"download_link":"https://depotbox.lol/api/download/a1b2c3","expiry_minutes":"30"}"#;
+    let status = parse_status(body).unwrap();
+    assert_eq!(
+        classify_status(&status.status),
+        JobPhase::Warning,
+        "a warnings payload must stay a terminal success"
+    );
+    assert_eq!(
+        status.download_link.as_deref(),
+        Some("https://depotbox.lol/api/download/a1b2c3")
+    );
+    assert_eq!(
+        status.final_user_zip_name.as_deref(),
+        Some("Half-Life-70.zip")
+    );
+    assert_eq!(status.expiry_minutes, Some(30));
+}
+
+#[test]
+fn an_unreadable_status_names_the_payload_shape() {
+    let error = parse_status(r#"{"success":true,"data":{"status":"completed"}}"#).unwrap_err();
+    assert!(
+        error.contains("status:string") || error.contains("success:bool"),
+        "the error must describe the payload shape: {error}"
+    );
+    assert!(
+        !error.contains("invalid type"),
+        "raw serde wording must not reach the user: {error}"
+    );
+
+    let nested = parse_status(r#"{"status":{"state":"processing"}}"#).unwrap_err();
+    assert!(
+        nested.contains("status"),
+        "a non-string state must be rejected: {nested}"
+    );
+
+    let broken = parse_status("not json").unwrap_err();
+    assert!(broken.contains("unreadable status"), "got: {broken}");
 }
 
 #[test]
