@@ -39,6 +39,7 @@ add_executable(core_unit_tests
     core_unit/achievement_export.cpp
     core_unit/achievement_policy.cpp
     core_unit/family_banner.cpp
+    core_unit/family_lender.cpp
     core_unit/loginusers.cpp
     core_unit/steamuicss.cpp
     core_unit/steamuipatch.cpp
@@ -89,7 +90,7 @@ if(MSVC)
 else()
     target_compile_options(core_unit_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
-foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool donorpool_learning donorpool_snapshot schema_cache schema_transcription schema_cache_restore donor_probe keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest productinfo_queue hubcap_key steam_beta overview depot_plan package_seed license_dispatch recheck achievement_state achievement_bitfield achievement_prefetch achievement_schema achievement_export achievement_policy family_banner pattern_state pattern_sidecar)
+foreach(case strings paths policy worker budget settings registry workers netpacket sentinel structguard gamesplayed_format donorpool donorpool_learning donorpool_snapshot schema_cache schema_transcription schema_cache_restore donor_probe keyvalues vdftext jsonutil_escapes manifest_identity ipcreply snapshot_merge ttlcache hexcodec signature ipcspec jsonwriter manifest_contract schema_buckets workers_reap_slow workers_race acfowner installeddepots ownership loginusers steamuicss steamuipatch callbackcopy memory payloadattest productinfo_queue hubcap_key steam_beta overview depot_plan package_seed license_dispatch recheck achievement_state achievement_bitfield achievement_prefetch achievement_schema achievement_export achievement_policy family_banner family_lender pattern_state pattern_sidecar)
     add_test(NAME ${case} COMMAND core_unit_tests ${case})
 endforeach()
 # The wire-contract golden blobs assert the field numbers of the generated

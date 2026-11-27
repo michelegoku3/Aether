@@ -130,5 +130,6 @@ void AchievementExport();
 void AchievementServiceWire();
 void AchievementPolicy();
 void FamilyBannerTest();
+void FamilyLenderTest();
 void PatternStateParseTest();
 void PatternSidecarTest();

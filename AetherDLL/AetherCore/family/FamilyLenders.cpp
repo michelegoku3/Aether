@@ -25,6 +25,7 @@
 #include "core/Settings.h"
 #include "core/Workers.h"
 #include "credentials/SteamId.h"
+#include "family/FamilyLenderPolicy.h"
 #include "hooks/license/LicenseManager.h"
 #include "scripting/LuaData.h"
 #include "utils/Paths.h"
@@ -61,18 +62,13 @@ bool ParseDecimal(std::string_view text, std::uint64_t& value) {
     return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
 }
 
-bool ParseHex32(std::string_view text, std::uint32_t& value) {
-    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value, 16);
-    return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
-}
-
 bool IsLastOwnerKey(std::string_view key) { return ac::paths::LowerAscii(key) == "lastowner"; }
 
-// localconfig.vdf's apptickets section stores one app ticket per installed app.
-// Its 20th byte is the package the app was issued from; for a family-shared app
-// that package belongs to the lender, so it survives the active user's ticket.
-void ReadAppTicketPackages(const std::string& localConfig,
-                           std::unordered_map<steam::AppId, std::uint32_t>& appPackages) {
+// localconfig.vdf's apptickets section stores one hex-encoded AppOwnershipTicket
+// per installed app; its single granting package lives in licenses[0] at byte 44.
+void ReadAppTicketPackages(const std::string& localConfig, std::unordered_map<steam::AppId, std::uint32_t>& appPackages,
+                           std::size_t& skippedTickets) {
+    skippedTickets = 0;
     std::size_t lineStart = 0;
     while (lineStart <= localConfig.size()) {
         std::size_t lineEnd = localConfig.find('\n', lineStart);
@@ -85,12 +81,16 @@ void ReadAppTicketPackages(const std::string& localConfig,
         std::string key;
         std::string value;
         if (ac::vdf::ParseLine(line, key, value) == ac::vdf::LineKind::KeyValue && IsDigits(key) &&
-            value.size() >= 48 && value.size() % 2 == 0 && value.compare(24, 8, "01001001") == 0) {
+            value.size() >= policy::kMinAppTicketHexChars) {
             std::uint64_t appId = 0;
-            std::uint32_t packageId = 0;
-            if (ParseDecimal(key, appId) && appId <= 0xFFFFFFFF &&
-                ParseHex32(std::string_view(value).substr(40, 8), packageId) && packageId != 0) {
-                appPackages[static_cast<steam::AppId>(appId)] = packageId;
+            if (ParseDecimal(key, appId) && appId > 0 && appId <= 0xFFFFFFFF) {
+                const auto typedAppId = static_cast<steam::AppId>(appId);
+                if (const auto packageId = policy::ExtractTicketPrimaryPackageId(typedAppId, value)) {
+                    appPackages[typedAppId] = *packageId;
+                } else if (value.size() % 2 == 0 &&
+                           value.compare(policy::kTicketSteamIdUpperHexChar, 8, "01001001") == 0) {
+                    ++skippedTickets;
+                }
             }
         }
 
@@ -223,7 +223,8 @@ bool Refresh() {
         return false;
 
     std::unordered_map<steam::AppId, std::uint32_t> appPackages;
-    ReadAppTicketPackages(localConfig, appPackages);
+    std::size_t skippedTickets = 0;
+    ReadAppTicketPackages(localConfig, appPackages, skippedTickets);
 
     const auto ownerRecords = ac::appmanifest::LoadOwnerRecordsSnapshot();
     const auto settings = Settings::Snapshot();
@@ -234,30 +235,43 @@ bool Refresh() {
     ReadLastOwners(g_state.steamInstallPath, activeAccount, appPackages, ownerRecords, settings, directOwners,
                    packageOwners, manifestCount);
 
+    const auto resolved = policy::ResolveLenders(appPackages, directOwners, packageOwners);
     std::unordered_map<steam::AppId, std::uint32_t> lenders;
-    for (const auto& [app, package] : appPackages) {
-        const auto direct = directOwners.find(app);
-        if (direct != directOwners.end()) {
-            lenders[app] = direct->second;
-            continue;
-        }
-        const auto owner = packageOwners.find(package);
-        if (owner != packageOwners.end())
-            lenders[app] = owner->second;
-    }
-    for (const auto& [app, owner] : directOwners)
-        lenders[app] = owner;
+    lenders.reserve(resolved.size());
+    for (const auto& [app, entry] : resolved)
+        lenders[app] = entry.lenderAccountId;
 
     bool changed = false;
     std::size_t lenderCount = 0;
+    std::unordered_map<steam::AppId, std::uint32_t> previousLenders;
     std::unordered_map<steam::AppId, std::uint32_t> lenderSnapshot;
     {
         std::unique_lock lock(s_mutex);
         changed = lenders != s_lenders;
+        if (changed)
+            previousLenders = std::move(s_lenders);
         s_lenders = std::move(lenders);
         s_ready = true;
         lenderCount = s_lenders.size();
         lenderSnapshot = s_lenders;
+    }
+
+    if (changed) {
+        for (const auto& [app, entry] : resolved) {
+            const auto prev = previousLenders.find(app);
+            if (prev == previousLenders.end() || prev->second != entry.lenderAccountId) {
+                const char* sourceName =
+                    entry.source == policy::LenderSource::DirectManifest ? "manifest_lastowner" : "shared_package";
+                AC_LOG_INFO(kModule, "Lender mapped: app=%u -> lender=%u (source=%s, pkg=%u, prev=%u).", app,
+                            entry.lenderAccountId, sourceName, entry.packageId,
+                            prev != previousLenders.end() ? prev->second : 0u);
+            }
+        }
+        for (const auto& [app, prevLender] : previousLenders) {
+            if (resolved.find(app) == resolved.end()) {
+                AC_LOG_INFO(kModule, "Lender unmapped: app=%u (was_lender=%u).", app, prevLender);
+            }
+        }
     }
 
     bool reconciled = false;
@@ -283,8 +297,8 @@ bool Refresh() {
     if (changed || reconciled)
         ac::hooks::LicenseManager::RequestLicenseRefresh();
 
-    AC_LOG_INFO(kModule, "Family lenders: %zu app(s), %zu ticket(s), %zu manifest(s).", lenderCount, appPackages.size(),
-                manifestCount);
+    AC_LOG_INFO(kModule, "Family lenders: %zu app(s), %zu ticket(s), %zu skipped, %zu manifest(s).", lenderCount,
+                appPackages.size(), skippedTickets, manifestCount);
     return true;
 }
 
