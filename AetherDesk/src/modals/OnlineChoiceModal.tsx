@@ -72,7 +72,7 @@ export const OnlineChoiceModal = ({
       <div className="modal-container oc-container" onClick={(e) => e.stopPropagation()}>
         <div className="oc-header">
           <h3 className="oc-header-title">
-            Online: {game.name} ({game.appId})
+            Online: <strong style={{ color: '#ffffff' }}>{game.name}</strong> ({game.appId})
           </h3>
           <button type="button" className="oc-close" onClick={onClose} disabled={busy} aria-label="Close">
             ×

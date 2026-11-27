@@ -4251,8 +4251,9 @@ body {
 
 .oc-header-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-muted);
 }
 
 .oc-close {
@@ -4628,12 +4629,17 @@ body {
 /* Achievement Manager Modal */
 .modal-container.achievements-modal {
   width: min(760px, 94vw);
-  max-height: 86vh;
+  max-height: calc(86vh + 10px);
   display: flex;
   flex-direction: column;
 }
 
-.achievements-modal-body {
+.achievements-modal .modal-header {
+  padding: 14px 19px;
+}
+
+.modal-body.achievements-modal-body {
+  padding: 19px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -4652,7 +4658,7 @@ body {
 
 .ach-summary-top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 288px;
+  grid-template-columns: minmax(0, 1fr) 275px;
   align-items: center;
   gap: 12px;
 }
@@ -4736,7 +4742,8 @@ body {
   grid-template-columns: minmax(0, 1fr) 288px;
   align-items: center;
   gap: 12px;
-  padding: 0 13px;
+  width: 100%;
+  padding: 0;
 }
 
 .ach-search {
@@ -4783,7 +4790,7 @@ body {
 
 .ach-list-scroll {
   overflow-y: auto;
-  max-height: 44vh;
+  max-height: calc(44vh + 10px);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -4806,6 +4813,7 @@ body {
 }
 
 .ach-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -4822,10 +4830,6 @@ body {
 .ach-row:hover {
   border-color: var(--border-strong);
   background: var(--bg-control);
-}
-
-.ach-row--unlocked {
-  border-left: 3px solid var(--color-installed-green);
 }
 
 .ach-row--locked {
@@ -4895,12 +4899,22 @@ body {
   color: var(--text-faint);
 }
 
+.ach-pending-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin: 0 8px;
+}
+
 .ach-badge {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  padding: 2px 6px;
+  letter-spacing: 0.4px;
+  padding: 5px 12px;
   border-radius: 999px;
+  white-space: nowrap;
 }
 
 .ach-badge--unlock {
@@ -4950,7 +4964,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-top: 8px;
+  padding: 11px 0;
+  margin-bottom: -8px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -4962,12 +4977,12 @@ body {
 }
 
 .ach-footer-btn {
-  width: 54px;
-  min-width: 54px;
-  height: 32px;
+  width: 92px;
+  min-width: 92px;
+  height: 34px;
   padding: 0;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;

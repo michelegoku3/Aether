@@ -79,8 +79,8 @@ const sampleSnapshot = (overrides: Partial<GameAchievementsSnapshot> = {}): Game
       hidden: true,
       unlocked: false,
       unlockTime: 0,
-      iconUrl: null,
-      iconGrayUrl: null,
+      iconUrl: 'https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/2124490/secret.jpg',
+      iconGrayUrl: 'https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/2124490/secret_gray.jpg',
       progress: null,
     },
   ],
@@ -113,12 +113,19 @@ describe('AchievementsModal', () => {
     expect(screen.queryByText(/Schema v/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Hidden$/)).not.toBeInTheDocument();
 
-    // Hidden locked achievement stays masked until "Show Hidden" is clicked
+    // Hidden locked achievement stays masked (both text and image) until "Show Hidden" is clicked
     expect(screen.queryByText('Maria Ending')).not.toBeInTheDocument();
     expect(screen.getByText('Hidden achievement')).toBeInTheDocument();
+    expect(screen.queryByAltText('Maria Ending')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('Hidden achievement')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Show Hidden' }));
     expect(screen.getByText('Maria Ending')).toBeInTheDocument();
+    expect(screen.getByAltText('Maria Ending')).toBeInTheDocument();
+
+    // Footer buttons put Save on the left and Close on the right
+    const footerBtns = within(document.querySelector('.ach-footer-actions') as HTMLElement).getAllByRole('button');
+    expect(footerBtns.map((b) => b.textContent)).toEqual(['Save', 'Close']);
   });
 
   it('keeps toggled achievements in their original section and updates badges in place', async () => {
@@ -134,9 +141,10 @@ describe('AchievementsModal', () => {
 
     await user.click(archivistToggle);
 
-    // Archivist stays inside Locked Achievements with a "Will unlock" badge
+    // Archivist stays inside Locked Achievements with centered "Will unlock" badge
     expect(within(lockedSection).getByText('Archivist')).toBeInTheDocument();
-    expect(within(lockedSection).getByText('Will unlock')).toBeInTheDocument();
+    const unlockBadge = within(lockedSection).getByText('Will unlock');
+    expect(unlockBadge.closest('.ach-pending-col')).not.toBeNull();
     expect(screen.getByText('Locked Achievements (2)')).toBeInTheDocument();
     expect(screen.getByText('Unlocked Achievements (1)')).toBeInTheDocument();
     expect(screen.queryByText(/pending edit/i)).not.toBeInTheDocument();
@@ -308,5 +316,35 @@ describe('AchievementsModal', () => {
       expect(invokeMock).toHaveBeenCalledWith('get_game_achievements', { appId: 2124490, accountId: 123456 })
     );
     await screen.findByText(/No achievement schema cache found/i);
+  });
+
+  it('keeps the achievement list mounted without flashing while switching Steam accounts', async () => {
+    let resolveSwitch!: (snap: GameAchievementsSnapshot) => void;
+    const switchPromise = new Promise<GameAchievementsSnapshot>((res) => {
+      resolveSwitch = res;
+    });
+    mockInvokeCommands({
+      get_game_achievements: (rawArgs?: Record<string, unknown>) => {
+        const args = rawArgs as { accountId?: number | null };
+        if (args.accountId === 123456) {
+          return switchPromise;
+        }
+        return Promise.resolve(sampleSnapshot());
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<AchievementsModal appId={2124490} gameName="SILENT HILL 2" onClose={vi.fn()} />);
+
+    await screen.findByText('Enjoy Your Stay');
+    await user.selectOptions(screen.getByLabelText(/Steam account/i), '123456');
+
+    // While the second account is loading, the modal body stays visible instead of collapsing
+    expect(screen.getByText('Enjoy Your Stay')).toBeInTheDocument();
+
+    resolveSwitch(sampleSnapshot({ accountId: 123456, unlockedCount: 0 }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith('get_game_achievements', { appId: 2124490, accountId: 123456 })
+    );
   });
 });

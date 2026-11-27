@@ -250,7 +250,8 @@ export const AchievementsModal = ({ appId, gameName, onClose, onStatus }: Achiev
     const isModified = pending[item.id] !== undefined && pending[item.id] !== item.unlocked;
     const isMasked = item.hidden && !item.unlocked && !revealHidden;
 
-    const baseIconUrl = effectiveUnlocked ? item.iconUrl : (item.iconGrayUrl ?? item.iconUrl);
+    // Mask hidden achievement artwork too unless Show Hidden is enabled (or unlocked on disk).
+    const baseIconUrl = isMasked ? null : effectiveUnlocked ? item.iconUrl : (item.iconGrayUrl ?? item.iconUrl);
     const candidates = buildIconCandidates(baseIconUrl);
     const attemptKey = `${item.id}:${baseIconUrl ?? ''}`;
     const attemptIdx = iconAttempts[attemptKey] ?? 0;
@@ -299,11 +300,6 @@ export const AchievementsModal = ({ appId, gameName, onClose, onStatus }: Achiev
         <div className="ach-meta">
           <div className="ach-title-line">
             <span className="ach-name">{displayName}</span>
-            {isModified && (
-              <span className={`ach-badge ${effectiveUnlocked ? 'ach-badge--unlock' : 'ach-badge--relock'}`}>
-                {effectiveUnlocked ? 'Will unlock' : 'Will relock'}
-              </span>
-            )}
           </div>
           <p className="ach-desc">{displayDesc}</p>
           {item.progress && !isMasked && (
@@ -325,11 +321,19 @@ export const AchievementsModal = ({ appId, gameName, onClose, onStatus }: Achiev
           </span>
         </div>
 
+        {isModified && (
+          <div className="ach-pending-col">
+            <span className={`ach-badge ${effectiveUnlocked ? 'ach-badge--unlock' : 'ach-badge--relock'}`}>
+              {effectiveUnlocked ? 'Will unlock' : 'Will relock'}
+            </span>
+          </div>
+        )}
+
         <div className="ach-toggle">
           <input
             type="checkbox"
             checked={effectiveUnlocked}
-            disabled={saving}
+            disabled={loading || saving}
             aria-label={displayName}
             onChange={() => toggleItem(item)}
           />
@@ -418,9 +422,9 @@ export const AchievementsModal = ({ appId, gameName, onClose, onStatus }: Achiev
           </div>
         )}
 
-        {loading && <p className="ach-loading">Loading achievements cache...</p>}
+        {loading && !snapshot && <p className="ach-loading">Loading achievements cache...</p>}
 
-        {snapshot && !loading && (
+        {snapshot && (
           <>
             <div className="ach-toolbar">
               <input
@@ -432,13 +436,20 @@ export const AchievementsModal = ({ appId, gameName, onClose, onStatus }: Achiev
                 aria-label="Search achievements"
               />
               <div className="ach-bulk-actions">
-                <button type="button" className="ach-small-btn" onClick={() => setRevealHidden((v) => !v)}>
+                <button
+                  type="button"
+                  className="ach-small-btn"
+                  disabled={loading || saving}
+                  onClick={() => setRevealHidden((v) => !v)}
+                >
                   {revealHidden ? 'Mask Hidden' : 'Show Hidden'}
                 </button>
                 <button
                   type="button"
                   className="ach-small-btn"
-                  disabled={saving || (bulkAction !== 'unlockAll' && snapshot.achievements.every((a) => a.unlocked))}
+                  disabled={
+                    loading || saving || (bulkAction !== 'unlockAll' && snapshot.achievements.every((a) => a.unlocked))
+                  }
                   onClick={handleUnlockAllClick}
                 >
                   {bulkAction === 'unlockAll' ? 'Discard' : 'Unlock All'}
@@ -446,7 +457,9 @@ export const AchievementsModal = ({ appId, gameName, onClose, onStatus }: Achiev
                 <button
                   type="button"
                   className="ach-small-btn"
-                  disabled={saving || (bulkAction !== 'lockAll' && snapshot.achievements.every((a) => !a.unlocked))}
+                  disabled={
+                    loading || saving || (bulkAction !== 'lockAll' && snapshot.achievements.every((a) => !a.unlocked))
+                  }
                   onClick={handleLockAllClick}
                 >
                   {bulkAction === 'lockAll' ? 'Discard' : 'Lock All'}
@@ -478,19 +491,19 @@ export const AchievementsModal = ({ appId, gameName, onClose, onStatus }: Achiev
               <div className="ach-footer-actions">
                 <button
                   type="button"
+                  className="ach-footer-btn ach-footer-btn--primary"
+                  disabled={loading || saving || edits.length === 0}
+                  onClick={() => void commitSave(false)}
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  type="button"
                   className="ach-footer-btn ach-footer-btn--secondary"
                   disabled={saving}
                   onClick={onClose}
                 >
                   Close
-                </button>
-                <button
-                  type="button"
-                  className="ach-footer-btn ach-footer-btn--primary"
-                  disabled={saving || edits.length === 0}
-                  onClick={() => void commitSave(false)}
-                >
-                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>

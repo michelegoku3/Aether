@@ -48,4 +48,11 @@ describe('OnlineChoiceModal OFME banner', () => {
     expect(screen.queryByRole('button', { name: 'Clean' })).not.toBeInTheDocument();
     expect(screen.queryByText(/OFME crack files detected/)).not.toBeInTheDocument();
   });
+
+  it('bolds only the game name in the Online modal header', () => {
+    renderModal(false);
+    const heading = document.querySelector('.oc-header-title');
+    expect(heading?.textContent).toBe('Online: Game (1)');
+    expect(heading?.querySelector('strong')?.textContent).toBe('Game');
+  });
 });
