@@ -217,7 +217,12 @@ export const LibraryGameActionsModal = ({
   // the topmost child in the Modify → Online → UCO2 chain, which steps down one
   // level at a time without ever closing everything.
   const childPopupOpen =
-    showOnlineChoice || showOnlinePanel || cleanConfirm !== null || cleanWarning !== null || showRemoveConfirm;
+    showOnlineChoice ||
+    showOnlinePanel ||
+    showAchievements ||
+    cleanConfirm !== null ||
+    cleanWarning !== null ||
+    showRemoveConfirm;
 
   const refreshUpdateState = async () => {
     try {

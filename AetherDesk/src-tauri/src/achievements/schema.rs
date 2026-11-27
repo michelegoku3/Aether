@@ -367,7 +367,7 @@ pub fn load_schema_for_app(
     }
 
     Err(format!(
-        "NO_SCHEMA: No achievement schema cache found for AppID {app_id}. Open this game's Achievements page in Steam (with AetherDLL active) once so Steam caches its schema."
+        "NO_SCHEMA: No achievement schema cache found for AppID {app_id}. Open this game's Achievements page in Steam (with AetherDLL active) once so Steam caches its schema if the game has achievements."
     ))
 }
 
@@ -382,11 +382,11 @@ pub fn resolve_icon_url(app_id: u32, icon_value: &str) -> Option<String> {
     let clean = trimmed.trim_start_matches('/');
     if clean.contains('/') {
         return Some(format!(
-            "https://shared.fastly.steamstatic.com/steamcommunity/public/images/apps/{clean}"
+            "https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/{clean}"
         ));
     }
     Some(format!(
-        "https://shared.fastly.steamstatic.com/steamcommunity/public/images/apps/{app_id}/{clean}"
+        "https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/{app_id}/{clean}"
     ))
 }
 
@@ -674,12 +674,20 @@ mod tests {
     fn icon_urls_normalize_filenames_and_full_urls() {
         assert_eq!(
             resolve_icon_url(2124490, "abc.jpg").as_deref(),
-            Some("https://shared.fastly.steamstatic.com/steamcommunity/public/images/apps/2124490/abc.jpg")
+            Some("https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/2124490/abc.jpg")
         );
         assert_eq!(
             resolve_icon_url(2124490, "https://example.com/x.jpg").as_deref(),
             Some("https://example.com/x.jpg")
         );
         assert_eq!(resolve_icon_url(2124490, "  "), None);
+    }
+
+    #[test]
+    fn missing_schema_message_mentions_if_game_has_achievements() {
+        let tmp = TempDir::new().unwrap();
+        let err = load_schema_for_app(tmp.path(), &tmp.path().join("data"), 294100)
+            .expect_err("missing schema must error");
+        assert!(err.ends_with("if the game has achievements."));
     }
 }

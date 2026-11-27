@@ -4651,11 +4651,10 @@ body {
 }
 
 .ach-summary-top {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 288px;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
 .ach-summary-count {
@@ -4668,11 +4667,18 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   font-size: 12px;
   color: var(--color-muted);
 }
 
+.ach-account-picker label {
+  white-space: nowrap;
+}
+
 .ach-account-picker select {
+  flex: 1 1 auto;
+  min-width: 0;
   background: var(--bg-control);
   color: var(--color-text);
   border: 1px solid var(--border-strong);
@@ -4726,48 +4732,39 @@ body {
 }
 
 .ach-toolbar {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 288px;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  padding: 0 13px;
 }
 
 .ach-search {
-  flex: 1 1 200px;
-  min-width: 170px;
-  background: var(--bg-field);
-  color: var(--color-text);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 12.5px;
+  width: 100%;
+  padding-right: 12px;
 }
 
-.ach-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.ach-tab-btn,
 .ach-small-btn {
+  width: 92px;
+  min-width: 92px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  box-sizing: border-box;
   background: var(--bg-control);
   color: var(--color-muted);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  padding: 5px 10px;
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
 }
 
-.ach-tab-btn.active {
-  color: var(--color-cyan);
-  border-color: var(--color-cyan);
-  background: var(--bg-control-hover);
-}
-
-.ach-small-btn:hover:not(:disabled),
-.ach-tab-btn:hover:not(:disabled) {
+.ach-small-btn:hover:not(:disabled) {
   color: var(--text-strong);
   border-color: var(--border-strong);
 }
@@ -4779,8 +4776,9 @@ body {
 
 .ach-bulk-actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  width: 288px;
 }
 
 .ach-list-scroll {
@@ -4794,10 +4792,11 @@ body {
 
 .ach-section-header {
   margin: 0 0 8px;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--color-muted);
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--text-strong);
 }
 
 .ach-section-list {
@@ -4904,11 +4903,6 @@ body {
   border-radius: 999px;
 }
 
-.ach-badge--hidden {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--color-muted);
-}
-
 .ach-badge--unlock {
   background: rgba(var(--color-installed-green-rgb), 0.16);
   color: var(--color-installed-green);
@@ -4955,39 +4949,50 @@ body {
 .ach-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: center;
   padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
 }
 
-.ach-footer-status {
-  font-size: 12px;
-  color: var(--color-muted);
-}
-
-.ach-dirty-count {
-  color: var(--color-cyan);
-  font-weight: 600;
-}
-
 .ach-footer-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
-.ach-save-btn {
-  background: var(--color-cyan);
-  color: #061016;
-  border: none;
+.ach-footer-btn {
+  width: 54px;
+  min-width: 54px;
+  height: 32px;
+  padding: 0;
   border-radius: 6px;
-  padding: 7px 14px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   cursor: pointer;
 }
 
-.ach-save-btn:disabled {
+.ach-footer-btn--secondary {
+  background: var(--bg-control);
+  color: var(--color-text);
+  border: 1px solid var(--border-strong);
+}
+
+.ach-footer-btn--secondary:hover:not(:disabled) {
+  border-color: var(--border-bright);
+}
+
+.ach-footer-btn--primary {
+  background: var(--color-cyan);
+  color: #061016;
+  border: none;
+}
+
+.ach-footer-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

@@ -1169,11 +1169,10 @@ mod tests {
         assert!(!snap.lua_managed);
         assert_eq!(snap.account_id, 77);
         assert_eq!(snap.total_count, 2);
-        assert!(snap.achievements[0]
-            .icon_url
-            .as_deref()
-            .unwrap()
-            .ends_with("/2124490/one.jpg"));
+        assert_eq!(
+            snap.achievements[0].icon_url.as_deref(),
+            Some("https://cdn.fastly.steamstatic.com/steamcommunity/public/images/apps/2124490/one.jpg")
+        );
     }
 
     #[test]

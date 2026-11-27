@@ -7,6 +7,10 @@ export interface ModalShellProps {
   onClose: () => void;
   /** When true, dismiss gestures are ignored (e.g. while a command runs). */
   closeDisabled?: boolean;
+  /** Allow dismissing by clicking the translucent backdrop outside the dialog. */
+  closeOnOverlayClick?: boolean;
+  /** Allow dismissing with Escape. */
+  closeOnEscape?: boolean;
   /** Extra class names for the container (size variants, etc.). */
   containerClassName?: string;
   /** Optional extra class on the body section. */
@@ -23,13 +27,15 @@ export const ModalShell = ({
   title,
   onClose,
   closeDisabled = false,
+  closeOnOverlayClick = true,
+  closeOnEscape = true,
   containerClassName = '',
   bodyClassName = '',
   children,
 }: ModalShellProps) => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !closeDisabled) {
+      if (event.key === 'Escape' && !closeDisabled && closeOnEscape) {
         event.preventDefault();
         onClose();
       }
@@ -37,14 +43,21 @@ export const ModalShell = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [closeDisabled, onClose]);
+  }, [closeDisabled, closeOnEscape, onClose]);
 
   const requestClose = () => {
     if (!closeDisabled) onClose();
   };
 
   return (
-    <div className="modal-overlay" onClick={requestClose} role="presentation">
+    <div
+      className="modal-overlay"
+      onClick={(event) => {
+        event.stopPropagation();
+        if (closeOnOverlayClick) requestClose();
+      }}
+      role="presentation"
+    >
       <div
         className={`modal-container ${containerClassName}`.trim()}
         onClick={(event) => event.stopPropagation()}
