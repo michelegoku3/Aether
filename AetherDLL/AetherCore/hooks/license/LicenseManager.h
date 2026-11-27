@@ -59,6 +59,10 @@ std::size_t Package0AppCount();
 // Queues an app for package-0 addition and license refresh on `BMainLoop`.
 void RequestAppInPackage0(steam::AppId appId);
 
+// Queues root app-id removal from package 0 when an app is confirmed as a
+// real Valve family share after package 0 was already seeded.
+void RequestRemoveAppFromPackage0(steam::AppId appId);
+
 // Queues a license refresh without adding an app (e.g. family lender updates).
 void RequestLicenseRefresh();
 

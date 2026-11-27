@@ -380,6 +380,8 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
                     out->freeLicense ? 1 : 0);
                 ac::appmanifest::RequestOwnerApply();
             }
+            if (!ownBanner)
+                LicenseManager::RequestRemoveAppFromPackage0(app);
             LicenseManager::RequestLicenseRefresh();
             RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
         }
@@ -429,6 +431,9 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
             }
             if (newlyFamilyShared) {
                 ac::appmanifest::RequestOwnerApply();
+            }
+            if (!ownBanner && (stateChanged || out->packageId == 0)) {
+                LicenseManager::RequestRemoveAppFromPackage0(app);
             }
             RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
         } else {

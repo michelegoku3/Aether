@@ -32,10 +32,12 @@ struct LicenseDispatchBatch {
     bool hotReload = false;
     bool refresh = false;
     std::vector<steam::AppId> apps;
+    std::vector<steam::AppId> removeApps;
     std::vector<steam::AppId> updateCheckApps;
 
     [[nodiscard]] bool Empty() const noexcept {
-        return !acquirePackage0 && !hotReload && !refresh && apps.empty() && updateCheckApps.empty();
+        return !acquirePackage0 && !hotReload && !refresh && apps.empty() && removeApps.empty() &&
+               updateCheckApps.empty();
     }
 };
 
@@ -44,6 +46,7 @@ struct LicenseDispatchQueue {
     bool hotReload = false;
     bool refresh = false;
     std::vector<steam::AppId> apps;
+    std::vector<steam::AppId> removeApps;
     std::vector<steam::AppId> updateCheckApps;
     std::uint64_t deferStartedMs = 0;
 
@@ -51,18 +54,26 @@ struct LicenseDispatchQueue {
     void RequestHotReload() noexcept { hotReload = true; }
     void RequestRefresh() noexcept { refresh = true; }
 
-    void RequestApp(steam::AppId appId) { AppendUnique(apps, appId); }
+    void RequestApp(steam::AppId appId) {
+        RemoveId(removeApps, appId);
+        AppendUnique(apps, appId);
+    }
+    void RequestRemoveApp(steam::AppId appId) {
+        RemoveId(apps, appId);
+        AppendUnique(removeApps, appId);
+    }
     void RequestUpdateCheck(steam::AppId appId) { AppendUnique(updateCheckApps, appId); }
 
     [[nodiscard]] bool HasPendingWork() const noexcept {
-        return acquirePackage0 || hotReload || refresh || !apps.empty() || !updateCheckApps.empty();
+        return acquirePackage0 || hotReload || refresh || !apps.empty() || !removeApps.empty() ||
+               !updateCheckApps.empty();
     }
 
     // State changes that alter package 0 or trigger a Steam license evaluation
     // must settle before SteamUI rebuilds an overview card for the same reload.
     // Standalone `updateCheckApps` follow that rebuild and never block it.
     [[nodiscard]] bool HasPendingLicenseState() const noexcept {
-        return acquirePackage0 || hotReload || refresh || !apps.empty();
+        return acquirePackage0 || hotReload || refresh || !apps.empty() || !removeApps.empty();
     }
 
     LicenseDispatchBatch TakeBatch() {
@@ -71,12 +82,14 @@ struct LicenseDispatchQueue {
         out.hotReload = hotReload;
         out.refresh = refresh;
         out.apps = std::move(apps);
+        out.removeApps = std::move(removeApps);
         out.updateCheckApps = std::move(updateCheckApps);
 
         acquirePackage0 = false;
         hotReload = false;
         refresh = false;
         apps.clear();
+        removeApps.clear();
         updateCheckApps.clear();
         deferStartedMs = 0;
         return out;
@@ -103,6 +116,12 @@ struct LicenseDispatchQueue {
             return;
         if (std::find(vec.begin(), vec.end(), appId) == vec.end())
             vec.push_back(appId);
+    }
+
+    static void RemoveId(std::vector<steam::AppId>& vec, steam::AppId appId) {
+        if (appId == 0)
+            return;
+        vec.erase(std::remove(vec.begin(), vec.end(), appId), vec.end());
     }
 };
 

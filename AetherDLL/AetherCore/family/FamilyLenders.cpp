@@ -266,6 +266,14 @@ bool Refresh() {
                             entry.lenderAccountId, sourceName, entry.packageId,
                             prev != previousLenders.end() ? prev->second : 0u);
             }
+            const bool isValveShare =
+                !settings
+                    ? ac::familyclass::IsValveFamilyLicense(app, entry.lenderAccountId, activeAccount, false, {}, 0)
+                    : ac::familyclass::IsValveFamilyLicense(
+                          app, entry.lenderAccountId, activeAccount, settings->libraryOwnerBanner,
+                          settings->libraryOwnerBannerApps, settings->libraryOwnerBannerSteamId);
+            if (isValveShare && ac::luadata::IsConfigured(app))
+                ac::hooks::LicenseManager::RequestRemoveAppFromPackage0(app);
         }
         for (const auto& [app, prevLender] : previousLenders) {
             if (resolved.find(app) == resolved.end()) {

@@ -60,6 +60,8 @@ template <typename Fn> void EnqueueWork(Fn&& mutate) {
 // later. Depots stay seeded - they are content, not a licence - and the opt-in
 // owner banner keeps its app, because that stamp is Aether's own.
 bool IsValveFamilyLicense(AppId appId) {
+    if (luadata::IsRealFamilyShare(appId))
+        return true;
     const std::uint32_t lender = ac::family::LenderFor(appId);
     if (lender == 0)
         return false;
@@ -306,6 +308,43 @@ bool AddAppToPackage0OnSteamThread(AppId appId) {
     return result.Changed();
 }
 
+void RemoveAppsFromPackage0OnSteamThread(const std::vector<AppId>& requestedRemovals, bool& didMutate,
+                                         bool& needRefresh) {
+    if (requestedRemovals.empty())
+        return;
+
+    std::vector<AppId> candidates;
+    candidates.reserve(requestedRemovals.size());
+    for (const AppId id : requestedRemovals) {
+        if (id != 0 && IsValveFamilyLicense(id))
+            candidates.push_back(id);
+    }
+    if (candidates.empty())
+        return;
+
+    auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load(std::memory_order_acquire));
+    if (!pkg)
+        return;
+    if (const auto guardReason = abi::guard::CheckPackage(pkg); !abi::guard::Passed(guardReason)) {
+        abi::guard::CountRejection("PackageInfo (family prune)", guardReason);
+        return;
+    }
+
+    // Only strip root app entries so any companion DLCs/depots configured for
+    // the borrowed base app stay intact in package 0.
+    std::size_t removed = 0;
+    RemoveAllFromPackage0(pkg, pkg->appIdVec, candidates, removed);
+    if (removed == 0)
+        return;
+
+    const std::uint32_t total = pkg->appIdVec.size;
+    g_state.package0AppCount.store(static_cast<std::size_t>(total), std::memory_order_relaxed);
+    didMutate = true;
+    needRefresh = true;
+    AC_LOG_INFO(kModule, "Package 0 pruned %zu real family-shared app entry(s) (total %u).", removed, total);
+    diag::Record("license_refresh", "family-prune -" + std::to_string(removed));
+}
+
 void ApplyHotReloadOnSteamThread(bool& didMutate, bool& needRefresh) {
     auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load(std::memory_order_acquire));
     if (!pkg && g_state.pCPackageInfo.load(std::memory_order_acquire) != nullptr) {
@@ -510,6 +549,12 @@ void RequestAppInPackage0(AppId appId) {
     EnqueueWork([appId](policy::LicenseDispatchQueue& q) { q.RequestApp(appId); });
 }
 
+void RequestRemoveAppFromPackage0(AppId appId) {
+    if (appId == 0)
+        return;
+    EnqueueWork([appId](policy::LicenseDispatchQueue& q) { q.RequestRemoveApp(appId); });
+}
+
 void RequestLicenseRefresh() {
     EnqueueWork([](policy::LicenseDispatchQueue& q) { q.RequestRefresh(); });
 }
@@ -608,6 +653,8 @@ void TryDrainOnSteamThread() {
         }
     }
 
+    RemoveAppsFromPackage0OnSteamThread(batch.removeApps, didMutate, needRefresh);
+
     bool refreshed = true;
     if (needRefresh) {
         refreshed = RefreshLicensesOnSteamThread(refreshReason);
@@ -632,9 +679,10 @@ void TryDrainOnSteamThread() {
 
     AC_LOG_DEBUG(kModule,
                  "Drained license work on steamclient main thread %lu (acquire=%d, hotreload=%d, ondemand=%zu, "
-                 "refresh=%d, update_checks=%zu).",
+                 "prune=%zu, refresh=%d, update_checks=%zu).",
                  static_cast<unsigned long>(GetCurrentThreadId()), batch.acquirePackage0 ? 1 : 0,
-                 batch.hotReload ? 1 : 0, batch.apps.size(), needRefresh ? 1 : 0, batch.updateCheckApps.size());
+                 batch.hotReload ? 1 : 0, batch.apps.size(), batch.removeApps.size(), needRefresh ? 1 : 0,
+                 batch.updateCheckApps.size());
 
     if (didMutate || needRefresh || publishAttempted || !batch.updateCheckApps.empty())
         status::Write();
