@@ -27,6 +27,7 @@ export interface SettingsFormState {
   customIconEnabled: boolean;
   iconSelectedFile: string;
   ryuuKey: string;
+  depotboxKey: string;
   libraryBannerEnabled: boolean;
   libraryBannerAppIds: string;
   libraryBannerSteamId: string;
@@ -58,6 +59,7 @@ export const settingsToForm = (settings: AppSettings): SettingsFormState => ({
   customIconEnabled: Boolean(settings.custom_icon_enabled),
   iconSelectedFile: String(settings.icon_selected_file || ''),
   ryuuKey: String(settings.ryuu_api_key || ''),
+  depotboxKey: String(settings.depotbox_api_key || ''),
   libraryBannerEnabled: Boolean(settings.library_banner_enabled),
   libraryBannerAppIds: formatAppIdList(settings.library_banner_appids),
   libraryBannerSteamId: String(settings.library_banner_steamid || ''),
@@ -84,6 +86,7 @@ export const buildSettings = (
   alternative_cards_opacity: form.alternativeCardsOpacity,
   alternative_cards_fade: form.alternativeCardsFade,
   ryuu_api_key: form.ryuuKey,
+  depotbox_api_key: form.depotboxKey,
   download_games_with_updates_on: form.downloadGamesWithUpdatesOn,
   show_store_front_games: form.showStoreFrontGames,
   use_alternative_game_cards: form.useAlternativeGameCards,

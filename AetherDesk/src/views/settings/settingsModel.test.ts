@@ -77,6 +77,15 @@ describe('settingsModel', () => {
     expect(isFormDirty(form, base)).toBe(true);
   });
 
+  it('round-trips the DepotBox download key through the form', () => {
+    const base = settings({ depotbox_api_key: 'dpb_live_abc' });
+    const form = settingsToForm(base);
+
+    expect(form.depotboxKey).toBe('dpb_live_abc');
+    expect(buildSettings({ ...form, depotboxKey: 'dpb_live_new' }, base).depotbox_api_key).toBe('dpb_live_new');
+    expect(settingsToForm(settings()).depotboxKey).toBe('');
+  });
+
   it('formats the library banner fields for the single-line input', () => {
     const form = settingsToForm(
       settings({

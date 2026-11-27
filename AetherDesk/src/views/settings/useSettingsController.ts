@@ -33,6 +33,7 @@ export function useSettingsController(params: Params) {
   const { form, setField } = model;
   const [showApiKey, setShowApiKey] = useState(false);
   const [showRyuuKey, setShowRyuuKey] = useState(false);
+  const [showDepotBoxKey, setShowDepotBoxKey] = useState(false);
   const [status, setStatus] = useState<{ text: string; type: StatusKind }>({ text: '', type: 'info' });
   const [settingsConflict, setSettingsConflict] = useState(false);
   const [settingsCorrupt, setSettingsCorrupt] = useState(false);
@@ -445,6 +446,8 @@ export function useSettingsController(params: Params) {
     setShowApiKey,
     showRyuuKey,
     setShowRyuuKey,
+    showDepotBoxKey,
+    setShowDepotBoxKey,
     steamCheck: steamPath.checkStatus,
     status,
     settingsConflict,

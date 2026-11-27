@@ -12,6 +12,10 @@ interface SettingsProvidersSectionProps {
   setRyuuKey: (v: string) => void;
   showRyuuKey: boolean;
   setShowRyuuKey: (v: boolean | ((prev: boolean) => boolean)) => void;
+  depotboxKey: string;
+  setDepotboxKey: (v: string) => void;
+  showDepotBoxKey: boolean;
+  setShowDepotBoxKey: (v: boolean | ((prev: boolean) => boolean)) => void;
   luaToolsAuth: LuaToolsAuthStatus;
   isLuaToolsAuthBusy: boolean;
   isLuaToolsOAuthBusy: boolean;
@@ -30,6 +34,10 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
   setRyuuKey,
   showRyuuKey,
   setShowRyuuKey,
+  depotboxKey,
+  setDepotboxKey,
+  showDepotBoxKey,
+  setShowDepotBoxKey,
   luaToolsAuth,
   isLuaToolsAuthBusy,
   isLuaToolsOAuthBusy,
@@ -104,6 +112,35 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
             onClick={() => setShowRyuuKey((v) => !v)}
           >
             {showRyuuKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+          </button>
+        </div>
+      </div>
+
+      {/* DepotBox API Key Section */}
+      <div className="settings-group">
+        <label className="settings-label">DepotBox API Key</label>
+        <div className="settings-provider-head">
+          <p className="settings-desc">Enter your depotbox.lol API key to download depot packages via DepotBox.</p>
+          {depotboxKey.trim() !== '' && <span className="settings-provider-badge">60/min</span>}
+        </div>
+        <div className="settings-input-wrap">
+          <input
+            type={showDepotBoxKey ? 'text' : 'password'}
+            placeholder="Enter DepotBox key (e.g. dpb_live_...)"
+            value={depotboxKey}
+            onChange={(e) => setDepotboxKey(e.target.value)}
+            className="settings-input"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            className="settings-input-eye"
+            title={showDepotBoxKey ? 'Hide API key' : 'Show API key'}
+            aria-label={showDepotBoxKey ? 'Hide API key' : 'Show API key'}
+            onClick={() => setShowDepotBoxKey((v) => !v)}
+          >
+            {showDepotBoxKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
           </button>
         </div>
       </div>

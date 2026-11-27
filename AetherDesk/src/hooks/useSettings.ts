@@ -17,6 +17,8 @@ export interface AppSettings {
   custom_css_enabled?: boolean;
   /** Ryuu API key (generator.ryuu.lol, 50/day, no verification endpoint) */
   ryuu_api_key?: string;
+  /** DepotBox download API key (depotbox.lol). Separate from the depotbox.org build-details token. */
+  depotbox_api_key?: string;
   /** Latest-version downloads comment setManifestid pins so Steam can update the game; OFF by default and requires an active Hubcap key. */
   download_games_with_updates_on?: boolean;
   /** Backend-owned one-time safe-default migration marker persisted in settings.json. */

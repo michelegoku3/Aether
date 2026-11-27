@@ -99,6 +99,10 @@ struct ProviderCredentials {
     hubcap_api_key: String,
     #[serde(default)]
     ryuu_api_key: String,
+    /// Missing from credentials written before this provider existed, so the
+    /// serde default is what keeps those files loadable.
+    #[serde(default)]
+    depotbox_api_key: String,
 }
 
 impl SettingsManager {
@@ -176,6 +180,7 @@ impl SettingsManager {
                     .map_err(|_| "Invalid protected provider credentials".to_string())?;
                 settings.hubcap_api_key = credentials.hubcap_api_key;
                 settings.ryuu_api_key = credentials.ryuu_api_key;
+                settings.depotbox_api_key = credentials.depotbox_api_key;
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(format!("Cannot read protected credentials: {e}")),
@@ -349,12 +354,14 @@ impl SettingsManager {
         let credentials = ProviderCredentials {
             hubcap_api_key: settings.hubcap_api_key.clone(),
             ryuu_api_key: settings.ryuu_api_key.clone(),
+            depotbox_api_key: settings.depotbox_api_key.clone(),
         };
         let plain = serde_json::to_vec(&credentials).map_err(|e| e.to_string())?;
         let encrypted = crate::core::secure_storage::protect(&plain)?;
         let mut disk = settings.clone();
         disk.hubcap_api_key.clear();
         disk.ryuu_api_key.clear();
+        disk.depotbox_api_key.clear();
         let pending = PendingSettings {
             format_version: 1,
             settings: serde_json::to_string_pretty(&disk).map_err(|e| e.to_string())?,
@@ -367,9 +374,11 @@ impl SettingsManager {
             let old_secret = ProviderCredentials {
                 hubcap_api_key: old.hubcap_api_key.clone(),
                 ryuu_api_key: old.ryuu_api_key.clone(),
+                depotbox_api_key: old.depotbox_api_key.clone(),
             };
             old.hubcap_api_key.clear();
             old.ryuu_api_key.clear();
+            old.depotbox_api_key.clear();
             let backup = PendingSettings {
                 format_version: 1,
                 settings: serde_json::to_string_pretty(&old).map_err(|e| e.to_string())?,
@@ -631,6 +640,31 @@ mod repository_tests {
         // machine, so the comparison holds here.
         let from_empty: AppSettings = serde_json::from_str("{}").expect("empty object must parse");
         assert_eq!(from_empty, AppSettings::default());
+    }
+    #[test]
+    fn depotbox_key_round_trips_encrypted_and_legacy_credentials_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = SettingsManager {
+            config_dir: dir.path().into(),
+        };
+        manager
+            .update("test", |s| {
+                s.depotbox_api_key = "depotbox-secret".into();
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(
+            manager.try_load().unwrap().depotbox_api_key,
+            "depotbox-secret"
+        );
+        let on_disk = fs::read_to_string(manager.get_file_path()).unwrap();
+        assert!(!on_disk.contains("depotbox-secret"));
+
+        // Credentials written before the provider existed must still parse.
+        let legacy: ProviderCredentials =
+            serde_json::from_str(r#"{"hubcap_api_key":"h","ryuu_api_key":"r"}"#).unwrap();
+        assert!(legacy.depotbox_api_key.is_empty());
     }
     #[test]
     fn disjoint_patches_preserve_concurrent_changes() {

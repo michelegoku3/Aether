@@ -56,6 +56,12 @@ pub struct AppSettings {
     /// Limit is 50 uses per day (enforced server-side).
     #[serde(default)]
     pub ryuu_api_key: String,
+    /// DepotBox download API key for `depotbox.lol`. No validation endpoint,
+    /// so any non-empty value is saved verbatim. Unrelated to
+    /// `build_details_token`, which belongs to the `depotbox.org` build details
+    /// source used by version switching.
+    #[serde(default)]
+    pub depotbox_api_key: String,
 
     // ---- Store ------------------------------------------------------------
     /// When false (default), DLC-like rows are filtered out of store search
@@ -293,6 +299,7 @@ impl Default for AppSettings {
             library_banner_steamid: String::new(),
             hubcap_api_key: String::new(),
             ryuu_api_key: String::new(),
+            depotbox_api_key: String::new(),
             show_store_dlcs: false,
             show_store_delisted: true,
             show_store_nsfw: true,
@@ -337,6 +344,7 @@ mod tests {
             "library_banner_steamid",
             "hubcap_api_key",
             "ryuu_api_key",
+            "depotbox_api_key",
             "show_store_dlcs",
             "show_store_delisted",
             "show_store_nsfw",

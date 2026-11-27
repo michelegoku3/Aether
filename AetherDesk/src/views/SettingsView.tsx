@@ -113,6 +113,10 @@ export const SettingsView = memo(function SettingsView(props: SettingsViewProps)
           setRyuuKey={(value) => c.setField('ryuuKey', value)}
           showRyuuKey={c.showRyuuKey}
           setShowRyuuKey={c.setShowRyuuKey}
+          depotboxKey={form.depotboxKey}
+          setDepotboxKey={(value) => c.setField('depotboxKey', value)}
+          showDepotBoxKey={c.showDepotBoxKey}
+          setShowDepotBoxKey={c.setShowDepotBoxKey}
           luaToolsAuth={lua.auth}
           isLuaToolsAuthBusy={lua.busy}
           isLuaToolsOAuthBusy={lua.oauthBusy}
