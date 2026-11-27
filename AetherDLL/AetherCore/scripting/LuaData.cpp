@@ -302,6 +302,11 @@ void MarkOwned(steam::AppId appId) {
 void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ownBanner, bool fromSteam) {
     std::unique_lock lock(g_state.lua.mutex);
     auto& lua = g_state.lua;
+    // Check prior non-banner Steam-confirmed status before inserting appId below:
+    // once Steam confirms a real share, a later call masked by Package 0
+    // (fromSteam=false) must not downgrade it back to map-derived.
+    const bool wasSteamShare = !ownBanner && lua.familySharedAppIds.contains(appId) &&
+                               !lua.bannerFamilyAppIds.contains(appId) && !lua.mapDerivedFamilyAppIds.contains(appId);
     lua.ownedAppIds.erase(appId);
     lua.spoofedAppIds.erase(appId);
     lua.familySharedAppIds.insert(appId);
@@ -309,7 +314,7 @@ void MarkFamilyShared(steam::AppId appId, std::uint32_t lenderAccountId, bool ow
         lua.bannerFamilyAppIds.insert(appId);
     else
         lua.bannerFamilyAppIds.erase(appId);
-    if (fromSteam)
+    if (fromSteam || wasSteamShare)
         lua.mapDerivedFamilyAppIds.erase(appId);
     else
         lua.mapDerivedFamilyAppIds.insert(appId);

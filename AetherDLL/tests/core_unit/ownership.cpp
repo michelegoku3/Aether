@@ -256,6 +256,18 @@ void OwnershipDecisionTest() {
         CHECK(!d.familyBanner);
     }
     {
+        // Even if Aether speculatively spoofed an app at boot before Steam
+        // synced family licenses, a real Steam borrowed/familyShared response
+        // must reclaim it as a Steam family share instead of keeping spoofed.
+        OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
+        f.spoofed = true;
+        f.familyShared = true;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::PassThrough);
+        CHECK(d.steamFamilyShared);
+        CHECK(!d.steamOwned);
+    }
+    {
         // Sticky banner app: package 0 keeps it owned and the banner must name
         // the stamp account.
         OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
@@ -298,6 +310,35 @@ void OwnershipDecisionTest() {
         f.familyLenderAccountId = 333;
         const auto d = DecideOwnership(f);
         CHECK(d.action == OwnershipAction::PassThrough);
+    }
+    {
+        // Package 0 can make a subsequent CheckAppOwnership call report the
+        // active account as steamId32 with borrowed=0, familyShared=0. The
+        // sticky real lender must survive and never be overwritten by self.
+        constexpr std::uint32_t kActiveUser = 5550001;
+        constexpr std::uint32_t kRealLender = 191847743;
+        CHECK_EQ(ac::ownership::ResolveObservedFamilyLender(true, kRealLender, 0u, kActiveUser), kRealLender);
+        CHECK_EQ(ac::ownership::ResolveObservedFamilyLender(false, kActiveUser, kRealLender, kActiveUser), kRealLender);
+        CHECK_EQ(ac::ownership::ResolveObservedFamilyLender(true, kActiveUser, kRealLender, kActiveUser), kRealLender);
+        CHECK_EQ(ac::ownership::ResolveObservedFamilyLender(false, 999999u, kRealLender, kActiveUser), kRealLender);
+        CHECK_EQ(ac::ownership::ResolveObservedFamilyLender(false, 0u, kActiveUser, kActiveUser), 0u);
+    }
+    {
+        // A non-zero free license or direct multi-package non-shared license on
+        // the active user's account proves direct ownership (e.g. Desktop Mate
+        // pkg=1169138 free=1); FamilyLenders must never reclassify it as shared.
+        CHECK(ac::ownership::IsDirectlyLicensedByActiveAccount(true, 1, AppReleaseState::Released, 1169138u, false,
+                                                               false, true));
+        CHECK(ac::ownership::IsDirectlyLicensedByActiveAccount(true, 2, AppReleaseState::Released, 137730u, false,
+                                                               false, false));
+        CHECK(!ac::ownership::IsDirectlyLicensedByActiveAccount(true, 1, AppReleaseState::Released, 0u, false, false,
+                                                                true));
+        CHECK(!ac::ownership::IsDirectlyLicensedByActiveAccount(true, 4, AppReleaseState::Released, 1023134u, false,
+                                                                true, false));
+        CHECK(!ac::ownership::IsDirectlyLicensedByActiveAccount(true, 2, AppReleaseState::Released, 1023134u, true,
+                                                                false, false));
+        CHECK(!ac::ownership::IsDirectlyLicensedByActiveAccount(true, 1, AppReleaseState::Released, 1023134u, false,
+                                                                false, false));
     }
 
     SeedIncludesUnclassifiedLuaApp();

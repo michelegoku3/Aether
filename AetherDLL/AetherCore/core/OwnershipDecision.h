@@ -80,7 +80,12 @@ inline OwnershipDecision DecideOwnership(const OwnershipFacts& facts) {
     // A real Steam Family licence belongs to Valve. Answering owned here is what
     // makes the library offer PLAY for a session the CM stops minutes later, so
     // the decision is Steam's own answer, marked as the family share it is.
-    if (facts.valveFamilyLicense) {
+    // Even if Aether speculatively spoofed the app at boot before Steam loaded
+    // CM family state, a fresh unmasked borrowed/familyShared answer wins.
+    const bool steamReportedFamily = facts.hasDepot && facts.steamResult && facts.existInPackageNums > 1 &&
+                                     facts.releaseState == steam::AppReleaseState::Released &&
+                                     (facts.borrowed || facts.familyShared);
+    if (facts.valveFamilyLicense || (facts.familyLenderAccountId == 0 && steamReportedFamily)) {
         OwnershipDecision decision;
         decision.action = OwnershipAction::PassThrough;
         decision.steamFamilyShared = true;
@@ -112,6 +117,29 @@ inline OwnershipDecision DecideOwnership(const OwnershipFacts& facts) {
     decision.action = OwnershipAction::Spoof;
     decision.ownerAccountId = facts.spoofOwnerAccountId;
     return decision;
+}
+
+// Resolves the family lender when PassThrough handles a real family share.
+// Only accepts reportedSteamId32 when Steam itself flagged the response as
+// borrowed/familyShared and it is not the active account (Package 0 entries
+// carry activeAccountId with borrowed=0 and familyShared=0).
+inline std::uint32_t ResolveObservedFamilyLender(bool steamReportedFamily, std::uint32_t reportedSteamId32,
+                                                 std::uint32_t existingLender, std::uint32_t activeAccountId) {
+    if (steamReportedFamily && reportedSteamId32 != 0 && reportedSteamId32 != activeAccountId)
+        return reportedSteamId32;
+    if (existingLender != 0 && existingLender != activeAccountId)
+        return existingLender;
+    return 0;
+}
+
+// True when Steam already proves a direct non-shared license on the active
+// user's account via a non-zero real package id (paid or free, e.g. free base
+// app + DLC lua). FamilyLenders must not reclassify these as RealShare.
+inline bool IsDirectlyLicensedByActiveAccount(bool steamResult, std::uint32_t existInPackageNums,
+                                              steam::AppReleaseState releaseState, std::uint32_t packageId,
+                                              bool borrowed, bool familyShared, bool freeLicense) {
+    return steamResult && releaseState == steam::AppReleaseState::Released && packageId != 0 && !borrowed &&
+           !familyShared && (existInPackageNums > 1 || freeLicense);
 }
 
 } // namespace ac::ownership

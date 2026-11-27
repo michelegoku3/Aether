@@ -331,6 +331,7 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
     const bool spoofed = luadata::IsSpoofed(app);
     std::uint32_t familyLender = luadata::FamilyLender(app);
     const std::uint32_t mapLender = ac::family::LenderFor(app);
+    const std::uint32_t activeAccountId = credential::ReadActiveUserId();
     const bool steamReportedFamily = result && out->existInPackageNums > 1 &&
                                      out->releaseState == AppReleaseState::Released &&
                                      (out->borrowed || out->familyShared);
@@ -353,19 +354,34 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
     // Steam family answer with a named lender wins; the map only fills a
     // missing lender. The licence stays Valve's: nothing below adds the app to
     // package 0.
-    if (familyLender == 0) {
-        if (mapLender != 0 && mapLender != credential::ReadActiveUserId()) {
-            const bool rawFamilyWithLender = steamReportedFamily && out->steamId32 != 0;
-            if (!rawFamilyWithLender) {
-                const bool ownBanner = IsOwnBannerAnswer(app, mapLender);
-                const bool wasFamilyShared = luadata::IsFamilyShared(app);
-                luadata::MarkFamilyShared(app, mapLender, ownBanner, /*fromSteam=*/false);
-                familyLender = mapLender;
-                if (!wasFamilyShared)
-                    ac::appmanifest::RequestOwnerApply();
-                LicenseManager::RequestLicenseRefresh();
-                RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
+    if (familyLender == 0 && mapLender != 0 && mapLender != activeAccountId) {
+        const bool rawFamilyWithLender =
+            steamReportedFamily && out->steamId32 != 0 && out->steamId32 != activeAccountId;
+        const bool ownBanner = IsOwnBannerAnswer(app, mapLender);
+        const bool directLicense = !ownBanner && ownership::IsDirectlyLicensedByActiveAccount(
+                                                     result, out->existInPackageNums, out->releaseState, out->packageId,
+                                                     out->borrowed, out->familyShared, out->freeLicense);
+        if (directLicense) {
+            AC_LOG_DEBUG_ONCE(
+                kModule,
+                "CheckAppOwnership: ignoring map lender %u for app %u (Steam reports direct license: pkg=%u, exist=%u, "
+                "free=%d).",
+                mapLender, app, out->packageId, out->existInPackageNums, out->freeLicense ? 1 : 0);
+        } else if (!rawFamilyWithLender) {
+            const bool wasFamilyShared = luadata::IsFamilyShared(app);
+            luadata::MarkFamilyShared(app, mapLender, ownBanner, /*fromSteam=*/false);
+            familyLender = mapLender;
+            if (!wasFamilyShared) {
+                AC_LOG_INFO(
+                    kModule,
+                    "CheckAppOwnership: app %u adopted map-derived family share (lender=%u, own_banner=%d, pkg=%u, "
+                    "exist=%u, free=%d).",
+                    app, mapLender, ownBanner ? 1 : 0, out->packageId, out->existInPackageNums,
+                    out->freeLicense ? 1 : 0);
+                ac::appmanifest::RequestOwnerApply();
             }
+            LicenseManager::RequestLicenseRefresh();
+            RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
         }
     }
     ownership::OwnershipFacts facts{
@@ -391,17 +407,33 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
         if (decision.steamFamilyShared) {
             // A boot-time owner pass ran before Steam could classify the app,
             // so the manifest may carry Aether's stamp. A real family license
-            // needs Steam's own value back to name a local owner, and the digit
-            // Steam leaves at 0 falls back to the lender the map resolved.
-            const std::uint32_t lender = out->steamId32 != 0 ? out->steamId32 : familyLender;
+            // needs Steam's own value back to name a local owner; when Package 0
+            // temporarily masks borrowed/familyShared and substitutes the active
+            // account id, preserve both the confirmed lender and sticky state.
+            const std::uint32_t lender = ownership::ResolveObservedFamilyLender(steamReportedFamily, out->steamId32,
+                                                                                familyLender, activeAccountId);
             const bool ownBanner = IsOwnBannerAnswer(app, lender);
             const bool newlyFamilyShared = !luadata::IsFamilyShared(app);
-            luadata::MarkFamilyShared(app, lender, ownBanner, steamReportedFamily);
+            const bool stickyFromSteam =
+                steamReportedFamily || (familyLender != 0 && !luadata::IsMapDerivedFamilyShare(app));
+            const bool stateChanged = newlyFamilyShared || lender != familyLender ||
+                                      (steamReportedFamily && luadata::IsMapDerivedFamilyShare(app));
+            if (stateChanged) {
+                luadata::MarkFamilyShared(app, lender, ownBanner, stickyFromSteam);
+                AC_LOG_INFO(kModule,
+                            "CheckAppOwnership: app %u %s family share (lender=%u, prev_lender=%u, from_steam=%d, "
+                            "own_banner=%d, pkg=%u, exist=%u, raw_steamId32=%u).",
+                            app, newlyFamilyShared ? "recorded" : "updated", lender, familyLender,
+                            stickyFromSteam ? 1 : 0, ownBanner ? 1 : 0, out->packageId, out->existInPackageNums,
+                            out->steamId32);
+            }
             if (newlyFamilyShared) {
                 ac::appmanifest::RequestOwnerApply();
             }
             RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
         } else {
+            AC_LOG_INFO(kModule, "CheckAppOwnership: app %u classified as owned (pkg=%u, exist=%u, free=%d).", app,
+                        out->packageId, out->existInPackageNums, out->freeLicense ? 1 : 0);
             luadata::MarkOwned(app);
             RecordOwnershipOutcome(app, OwnershipOutcome::LegitOwned);
         }
@@ -420,6 +452,11 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
     // spoof through the sticky flag. A recorded family lender is Valve's and
     // never reaches this point (its decision is PassThrough).
     if (!spoofed && familyLender == 0) {
+        AC_LOG_INFO(kModule,
+                    "CheckAppOwnership: app %u classified as spoofed -> queued package 0 (pkg=%u, exist=%u, free=%d, "
+                    "borrowed=%d, familyShared=%d).",
+                    app, out->packageId, out->existInPackageNums, out->freeLicense ? 1 : 0, out->borrowed ? 1 : 0,
+                    out->familyShared ? 1 : 0);
         luadata::MarkSpoofed(app);
         LicenseManager::RequestAppInPackage0(app);
     }

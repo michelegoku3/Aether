@@ -132,4 +132,12 @@ void FamilyBannerTest() {
     CHECK(!ac::luadata::IsMapDerivedFamilyShare(kApp));
     CHECK(!ac::luadata::ClearMapFamilyShare(kApp));
     CHECK(ac::luadata::IsRealFamilyShare(kApp));
+
+    // A later PassThrough refresh where Package 0 masks borrowed/familyShared
+    // (fromSteam=false) must NEVER downgrade a Steam-confirmed family share back
+    // to map-derived, otherwise ShouldClearMapFamilyShare would wipe it.
+    ac::luadata::MarkFamilyShared(kApp, 12345, /*ownBanner=*/false, /*fromSteam=*/false);
+    CHECK(!ac::luadata::IsMapDerivedFamilyShare(kApp));
+    CHECK(!ac::luadata::ClearMapFamilyShare(kApp));
+    CHECK(ac::luadata::IsRealFamilyShare(kApp));
 }
