@@ -98,6 +98,17 @@ void ExcludeIdsDropsFamilyRootFromMixedDlcSeed() {
     CHECK(filtered == (std::vector<AppId>{2868841, 2868850}));
 }
 
+void PruneEligibilityCoversFamilyAndUnmaskWhileProtectingSpoofs() {
+    using ac::hooks::license::policy::ShouldPruneRequestedApp;
+    CHECK(ShouldPruneRequestedApp(/*isValveFamily=*/true, /*isSpoofed=*/false, /*isOwnBanner=*/false));
+    CHECK(ShouldPruneRequestedApp(true, true, false));
+    // Unclassified (unmask) and Steam-owned roots may be stripped from package 0.
+    CHECK(ShouldPruneRequestedApp(false, false, false));
+    // Active spoofs and opt-in banner stamps stay seeded in package 0.
+    CHECK(!ShouldPruneRequestedApp(false, true, false));
+    CHECK(!ShouldPruneRequestedApp(false, false, true));
+}
+
 } // namespace
 
 void PackageSeedTest() {
@@ -111,4 +122,5 @@ void PackageSeedTest() {
     PublishTracksRefreshCompletion();
     PrunesFamilyRootFromBothVectorsKeepingDlcs();
     ExcludeIdsDropsFamilyRootFromMixedDlcSeed();
+    PruneEligibilityCoversFamilyAndUnmaskWhileProtectingSpoofs();
 }

@@ -73,6 +73,19 @@ bool IsValveFamilyLicense(AppId appId) {
                                              settings->libraryOwnerBannerApps, settings->libraryOwnerBannerSteamId);
 }
 
+bool IsOwnBannerRoot(AppId appId) {
+    if (luadata::IsFamilyShared(appId) && !luadata::IsRealFamilyShare(appId))
+        return true;
+    const std::uint32_t lender = ac::family::LenderFor(appId);
+    if (lender == 0)
+        return false;
+    const auto settings = Settings::Snapshot();
+    if (!settings)
+        return false;
+    return familyclass::IsOwnBannerStamp(appId, lender, settings->libraryOwnerBanner, settings->libraryOwnerBannerApps,
+                                         settings->libraryOwnerBannerSteamId, credential::ReadActiveUserId());
+}
+
 // Collects any active Valve family-shared root ids so package-0 seeds and
 // hot-reloads keep them out of both appIdVec and depotIdVec without dropping
 // distinct companion DLC or depot ids.
@@ -316,7 +329,12 @@ void RemoveAppsFromPackage0OnSteamThread(const std::vector<AppId>& requestedRemo
     std::vector<AppId> candidates;
     candidates.reserve(requestedRemovals.size());
     for (const AppId id : requestedRemovals) {
-        if (id != 0 && IsValveFamilyLicense(id))
+        if (id == 0)
+            continue;
+        const bool isValveFamily = IsValveFamilyLicense(id);
+        const bool isSpoofed = luadata::IsSpoofed(id);
+        const bool isOwnBanner = (!isValveFamily && !isSpoofed) ? IsOwnBannerRoot(id) : false;
+        if (policy::ShouldPruneRequestedApp(isValveFamily, isSpoofed, isOwnBanner))
             candidates.push_back(id);
     }
     if (candidates.empty())

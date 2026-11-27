@@ -220,6 +220,40 @@ void OwnershipDecisionTest() {
         CHECK_EQ(d.ownerAccountId, 222u);
     }
     {
+        // Package 0 combined with a paid Valve license overwrites packageId=0,
+        // clears freeLicense/borrowed/familyShared, and bumps exist>1. For an
+        // unclassified app, never MarkOwned from this masked answer: request
+        // package-0 unmask so Steam reveals the real license.
+        OwnershipFacts f = facts(true, 3, AppReleaseState::Released);
+        f.package0Masked = true;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::PassThrough);
+        CHECK(!d.steamOwned);
+        CHECK(!d.steamFamilyShared);
+        CHECK(d.needsPackage0Unmask);
+    }
+    {
+        // Sticky spoof survives package0Masked until unmasked family flags win.
+        OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
+        f.spoofed = true;
+        f.package0Masked = true;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::Spoof);
+        CHECK(!d.needsPackage0Unmask);
+    }
+    {
+        // Sticky Valve family license stays PassThrough+family even when package 0
+        // temporarily masks flags with package0Masked.
+        OwnershipFacts f = facts(true, 2, AppReleaseState::Released);
+        f.valveFamilyLicense = true;
+        f.familyLenderAccountId = 333;
+        f.package0Masked = true;
+        const auto d = DecideOwnership(f);
+        CHECK(d.action == OwnershipAction::PassThrough);
+        CHECK(d.steamFamilyShared);
+        CHECK(!d.steamOwned);
+    }
+    {
         // Not released yet: not Steam-provided.
         OwnershipFacts f = facts(true, 2, AppReleaseState::Uninstalled);
         const auto d = DecideOwnership(f);

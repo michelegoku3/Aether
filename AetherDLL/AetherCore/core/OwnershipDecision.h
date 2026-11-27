@@ -49,6 +49,10 @@ struct OwnershipFacts {
     // freeLicense): package 0 is where Aether seeds unowned apps and can count
     // >1 during license cache rebuilds without representing a real Steam buy.
     bool freePackage0Only = false;
+    // True when Steam returned packageId == 0 with freeLicense == false
+    // (package 0 sits in appToLicenses alongside another non-free Valve
+    // package and overwrote familyShared/borrowed/steamId32 with self).
+    bool package0Masked = false;
 };
 
 enum class OwnershipAction {
@@ -61,6 +65,7 @@ struct OwnershipDecision {
     bool steamOwned = false;          // pass-through: mark genuinely owned
     bool steamFamilyShared = false;   // pass-through: mark real family license
     bool familyBanner = false;        // spoof: keep the family bit for the banner
+    bool needsPackage0Unmask = false; // pass-through: strip root from package 0 to reveal real license
     std::uint32_t ownerAccountId = 0; // spoof: value for steamId32
 };
 
@@ -68,8 +73,8 @@ struct OwnershipDecision {
 // package. The hook uses this before reading the live account, which costs a
 // registry lookup.
 inline bool IsSteamProvided(const OwnershipFacts& facts) {
-    return facts.hasDepot && facts.steamResult && !facts.freePackage0Only && facts.existInPackageNums > 1 &&
-           facts.releaseState == steam::AppReleaseState::Released;
+    return facts.hasDepot && facts.steamResult && !facts.freePackage0Only && !facts.package0Masked &&
+           facts.existInPackageNums > 1 && facts.releaseState == steam::AppReleaseState::Released;
 }
 
 inline OwnershipDecision DecideOwnership(const OwnershipFacts& facts) {
@@ -102,6 +107,17 @@ inline OwnershipDecision DecideOwnership(const OwnershipFacts& facts) {
         // A banner app stays a family app in the UI even though package 0
         // makes the license answer owned; that bit is what renders the banner.
         decision.familyBanner = facts.familyLenderAccountId != 0;
+        return decision;
+    }
+
+    // Package 0 overwrites packageId=0, familyShared=0, borrowed=0, and
+    // steamId32=self even when a real Valve license exists in appToLicenses.
+    // Unmask by stripping the root id from package 0 before classifying owned.
+    if (facts.package0Masked && facts.steamResult && facts.existInPackageNums > 1 &&
+        facts.releaseState == steam::AppReleaseState::Released) {
+        OwnershipDecision decision;
+        decision.action = OwnershipAction::PassThrough;
+        decision.needsPackage0Unmask = true;
         return decision;
     }
 

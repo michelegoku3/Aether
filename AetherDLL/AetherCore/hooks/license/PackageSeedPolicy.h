@@ -161,6 +161,12 @@ inline std::vector<steam::AppId> ExcludeIds(const std::vector<steam::AppId>& see
     return ApplyPrune(NormalizeSeed(seed), excludedIds).ids;
 }
 
+// Package 0 strips roots owned/shared by Valve or still awaiting package-0
+// unmasking, while keeping actively spoofed apps and opt-in owner banners.
+constexpr bool ShouldPruneRequestedApp(bool isValveFamily, bool isSpoofed, bool isOwnBanner) noexcept {
+    return isValveFamily || (!isSpoofed && !isOwnBanner);
+}
+
 // Outcome of a package-0 seed + license-refresh attempt. Seeding package 0's
 // vectors can succeed before CUser is captured; the refresh itself stays
 // pending until CUser exists and Steam is asked to re-read licenses.

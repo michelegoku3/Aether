@@ -398,6 +398,7 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
         familyLender,
         IsValveFamilyAnswer(app, familyLender),
         out->packageId == 0 && out->freeLicense,
+        out->packageId == 0 && !out->freeLicense,
     };
     // Resolving the account reads the registry; a family lender already names
     // the banner owner, and a pass-through needs no owner at all.
@@ -436,19 +437,26 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
                 LicenseManager::RequestRemoveAppFromPackage0(app);
             }
             RecordOwnershipOutcome(app, ownBanner ? OwnershipOutcome::Unlocked : OwnershipOutcome::FamilyShared);
+        } else if (decision.needsPackage0Unmask) {
+            AC_LOG_INFO(kModule,
+                        "CheckAppOwnership: app %u answer masked by package 0 (pkg=%u, exist=%u, free=%d, "
+                        "raw_steamId32=%u); deferring classification until root is pruned.",
+                        app, out->packageId, out->existInPackageNums, out->freeLicense ? 1 : 0, out->steamId32);
+            LicenseManager::RequestRemoveAppFromPackage0(app);
         } else {
             AC_LOG_INFO(kModule, "CheckAppOwnership: app %u classified as owned (pkg=%u, exist=%u, free=%d).", app,
                         out->packageId, out->existInPackageNums, out->freeLicense ? 1 : 0);
             luadata::MarkOwned(app);
+            LicenseManager::RequestRemoveAppFromPackage0(app);
             RecordOwnershipOutcome(app, OwnershipOutcome::LegitOwned);
         }
         AC_LOG_DEBUG_ONCE(
             kModule,
             "CheckAppOwnership: %u steam-provided class=%s result=%d exist=%u pkg=%u free=%d release=%u borrowed=%d "
             "familyShared=%d.",
-            app, decision.steamFamilyShared ? "family-shared" : "owned", result ? 1 : 0, out->existInPackageNums,
-            out->packageId, out->freeLicense ? 1 : 0, static_cast<unsigned>(out->releaseState), out->borrowed ? 1 : 0,
-            out->familyShared ? 1 : 0);
+            app, decision.steamFamilyShared ? "family-shared" : (decision.needsPackage0Unmask ? "unmasking" : "owned"),
+            result ? 1 : 0, out->existInPackageNums, out->packageId, out->freeLicense ? 1 : 0,
+            static_cast<unsigned>(out->releaseState), out->borrowed ? 1 : 0, out->familyShared ? 1 : 0);
         return result;
     }
 
