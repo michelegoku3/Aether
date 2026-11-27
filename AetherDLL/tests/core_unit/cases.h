@@ -134,3 +134,4 @@ void FamilyLenderTest();
 void PatternStateParseTest();
 void PatternSidecarTest();
 void SignatureScanTest();
+void SendOriginPolicyTest();

@@ -179,17 +179,8 @@ bool h_BBuildAndAsyncSendFrame(void* obj, steam::EWebSocketOpCode opcode, std::u
                          (raw & kMsgHdrProtoFlag) ? 1 : 0, len);
         }
     } else {
-        CaptureOrigin(obj, f);
-        // The CM only answers a composed service call that carries an
-        // authenticated identity. Keep the last service-call header separately,
-        // and only when it has a steamid: heartbeats and pre-login frames share
-        // the same shape but leave steamid at 0, and a call echoing one of those
-        // is silently dropped by the server.
-        if (f.eMsg == emsg::kServiceMethodCallFromClient || f.eMsg == emsg::kServiceMethodCallFromClientAlt) {
-            CMsgProtoBufHeader ph;
-            if (f.headerLen != 0 && ph.ParseFromArray(f.header, static_cast<int>(f.headerLen)) && ph.steamid() != 0)
-                CaptureServiceOrigin(obj, f);
-        }
+        CaptureOrigin(0, obj, f);
+        CaptureServiceOrigin(0, obj, f);
         std::int32_t newBodyLen = DispatchSend(f);
         // Defense in depth: handlers must report a length within the scratch
         // budget they were given. A misbehaving handler must degrade to
