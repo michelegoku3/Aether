@@ -289,7 +289,15 @@ impl DepotBoxClient {
                 describe_api_error(status.as_u16(), &body)
             ));
         }
-        parse_status(&body)
+        parse_status(&body).map_err(|error| {
+            crate::desk_log_error!(
+                "depotbox",
+                "DepotBox status for {} is unreadable: {}",
+                crate::core::logger::format_appid(job.app_id),
+                error
+            );
+            error
+        })
     }
 
     async fn download_zip(&self, link: &str, app_id: u32) -> Result<Vec<u8>, String> {

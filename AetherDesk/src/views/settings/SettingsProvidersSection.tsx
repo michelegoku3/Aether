@@ -121,7 +121,7 @@ export const SettingsProvidersSection: React.FC<SettingsProvidersSectionProps> =
         <label className="settings-label">DepotBox API Key</label>
         <div className="settings-provider-head">
           <p className="settings-desc">Enter your depotbox.lol API key to download depot packages via DepotBox.</p>
-          {depotboxKey.trim() !== '' && <span className="settings-provider-badge">60/min</span>}
+          {depotboxKey.trim() !== '' && <span className="settings-provider-badge">30/day</span>}
         </div>
         <div className="settings-input-wrap">
           <input
