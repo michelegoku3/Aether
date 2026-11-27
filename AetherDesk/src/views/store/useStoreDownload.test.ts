@@ -63,6 +63,32 @@ describe('useStoreDownload', () => {
     expect(result.current.source).toBe('ryuu');
   });
 
+  it('keeps a manually chosen source while provider discovery is in flight', async () => {
+    let resolveSettings: (value: unknown) => void = () => {};
+    const settingsPromise = new Promise((resolve) => {
+      resolveSettings = resolve;
+    });
+    invokeMock.mockImplementation((command: string) => {
+      if (command === 'get_settings') return settingsPromise;
+      if (command === 'get_luatools_auth_status') return Promise.resolve({ signedIn: true });
+      return Promise.reject(new Error(`Unexpected Tauri command: ${command}`));
+    });
+    const { result } = renderHook(() => useStoreDownload({}));
+
+    let opening: Promise<void> | undefined;
+    act(() => {
+      opening = result.current.openDownload(game);
+    });
+    act(() => result.current.setSource('ryuu'));
+
+    await act(async () => {
+      resolveSettings(configuredSettings);
+      await opening;
+    });
+
+    expect(result.current.source).toBe('ryuu');
+  });
+
   it('falls back to Hubcap when provider discovery fails', async () => {
     invokeMock.mockRejectedValue(new Error('offline'));
     const { result } = renderHook(() => useStoreDownload({}));

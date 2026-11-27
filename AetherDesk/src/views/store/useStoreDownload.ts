@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings, type AppSettings } from '../../hooks/useSettings';
 import { useLibraryGames } from '../../hooks/useLibraryGames';
@@ -35,6 +35,13 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [versionGame, setVersionGame] = useState<StoreGameResult | null>(null);
   const [manifestRows, setManifestRows] = useState<LuaManifestRow[]>([]);
+  // Provider discovery is asynchronous; a click on a source button must win
+  // over the default that resolves afterwards.
+  const sourceTouched = useRef(false);
+  const chooseSource = useCallback((next: StoreDownloadSource) => {
+    sourceTouched.current = true;
+    setSource(next);
+  }, []);
 
   useModalDismiss(() => setSelectedGame(null), isDownloading);
 
@@ -46,24 +53,26 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
     setSelectedGame(game);
     setStatus(emptyStatus());
     setIsDownloading(false);
+    sourceTouched.current = false;
     try {
       const [settingsResult, authResult] = await Promise.allSettled([
         getSettings(),
         invoke<{ signedIn: boolean }>('get_luatools_auth_status'),
       ]);
       if (settingsResult.status !== 'fulfilled') {
-        setSource('hubcap');
+        if (!sourceTouched.current) setSource('hubcap');
         return;
       }
       const settings = settingsResult.value;
       const luaToolsSignedIn = authResult.status === 'fulfilled' && authResult.value.signedIn;
+      if (sourceTouched.current) return;
       if (settings.hubcap_api_key?.trim()) setSource('hubcap');
       else if (luaToolsSignedIn) setSource('luatools');
       else if (settings.depotbox_api_key?.trim()) setSource('depotbox');
       else if (settings.ryuu_api_key?.trim()) setSource('ryuu');
       else setSource('hubcap');
     } catch {
-      setSource('hubcap');
+      if (!sourceTouched.current) setSource('hubcap');
     }
   }, []);
 
@@ -176,7 +185,7 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
     isDownloading,
     versionGame,
     manifestRows,
-    setSource,
+    setSource: chooseSource,
     openDownload,
     closeDownload,
     downloadLatest,
