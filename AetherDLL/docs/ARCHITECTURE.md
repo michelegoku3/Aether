@@ -252,9 +252,13 @@ everything.
   makes, composed with `SendClientServiceCall` — for every installed managed app
   that has no schema file, paced at 150 ms and waiting for a captured service
   call first. The header a composed call borrows decides whether the CM answers:
-  one echoed from a heartbeat (`steamid` 0) is dropped, so `FrameOrigin` keeps a
-  separate slot for headers of real service calls and `SendClientServiceCall`
-  composes from that one. The reply goes through the ordinary capture
+  one echoed from an unauthenticated frame (`steamid` 0, such as heartbeats
+  or local WebUI traffic) is dropped, so `FrameOrigin` only accepts frames
+  with a non-zero `steamid`, keeps both the CNet `hConnection` handle (for
+  UDP, TCP, and WebSocket traffic intercepted via `CNet::BAsyncSend` /
+  `CNet::BAsyncSendSwapReserved`) and the WebSocket object pointer under the
+  `BBuildAndAsyncSendFrame` fallback, and reserves a separate slot for real
+  service calls that `SendClientServiceCall` composes from. The reply goes through the ordinary capture
   (`OnRecvSchema` → `PublishSchemaFile`), so cache, backup and marker appear
   without the user opening anything. An empty answer is remembered in
   `aethercore\achievement_prefetch.txt` for a week, so an app without

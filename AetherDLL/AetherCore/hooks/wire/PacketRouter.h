@@ -8,9 +8,10 @@
 // ---------------------------------------------------------------------------
 // Wire-level packet interception.
 //
-// Hooks the two steamclient networking entry points:
-//   * BBuildAndAsyncSendFrame  — outgoing frames (client -> server)
-//   * RecvPkt                  — incoming frames (server -> client)
+// Hooks steamclient networking entry points:
+//   * CNet::BAsyncSend / BAsyncSendSwapReserved — unified outgoing frames across
+//     UDP, TCP, and WebSocket (with BBuildAndAsyncSendFrame WebSocket fallback)
+//   * RecvPkt                                   — incoming frames (server -> client)
 //
 // Each frame is decoded into (eMsg, header, body). Registered subsystems may
 // rewrite the body (and, for recv, the header). To avoid heap churn on Steam's
