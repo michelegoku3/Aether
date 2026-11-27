@@ -139,3 +139,116 @@ impl SteamUpdateGuard {
         Some((key.trim(), value.trim()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A Steam root that passes the strict directory validation: the guard
+    /// refuses to write into a folder without `steam.exe`, so the fake root
+    /// must contain one.
+    fn steam_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp dir");
+        fs::write(dir.path().join("steam.exe"), b"").expect("fake steam.exe");
+        dir
+    }
+
+    fn guard(dir: &tempfile::TempDir) -> SteamUpdateGuard {
+        SteamUpdateGuard::new(dir.path())
+    }
+
+    #[test]
+    fn unblocking_deletes_steam_cfg_and_its_foreign_keys() {
+        let dir = steam_dir();
+        let cfg = dir.path().join("steam.cfg");
+        fs::write(
+            &cfg,
+            "BootStrapperInhibitAll=Enable\nBootStrapperForceSelfUpdate=Disable\n",
+        )
+        .expect("seed steam.cfg");
+
+        guard(&dir).unblock_updates().expect("unblock");
+
+        // Re-enabling updates must leave Steam with no bootstrapper config at
+        // all: an absent file cannot be malformed, while a rewritten one can.
+        assert!(!cfg.exists(), "unblock must delete steam.cfg");
+    }
+
+    #[test]
+    fn unblocking_without_a_file_is_a_noop() {
+        let dir = steam_dir();
+
+        guard(&dir).unblock_updates().expect("unblock");
+
+        assert!(!dir.path().join("steam.cfg").exists());
+    }
+
+    #[test]
+    fn blocking_writes_the_directive_and_reports_blocked() {
+        let dir = steam_dir();
+        let guard = guard(&dir);
+
+        guard.block_updates().expect("block");
+
+        let content = fs::read_to_string(dir.path().join("steam.cfg")).expect("read steam.cfg");
+        assert!(content.contains("BootStrapperInhibitAll=Enable"));
+        assert!(guard.is_blocked().expect("read state"));
+    }
+
+    #[test]
+    fn blocking_replaces_the_directive_and_keeps_foreign_lines() {
+        let dir = steam_dir();
+        let cfg = dir.path().join("steam.cfg");
+        fs::write(
+            &cfg,
+            "# my comment\nOtherKey=1\nbootstrapperinhibitall=Enable\n",
+        )
+        .expect("seed steam.cfg");
+
+        guard(&dir).block_updates().expect("block");
+
+        let content = fs::read_to_string(&cfg).expect("read steam.cfg");
+        assert!(content.contains("# my comment"));
+        assert!(content.contains("OtherKey=1"));
+        // The key is matched case-insensitively and normalised, so a stale
+        // spelling can never survive beside the directive Aether writes.
+        assert_eq!(content.matches("=Enable").count(), 1);
+        assert!(!content.contains("bootstrapperinhibitall=Enable"));
+    }
+
+    #[test]
+    fn blocking_leaves_no_temporary_file_behind() {
+        let dir = steam_dir();
+
+        guard(&dir).block_updates().expect("block");
+
+        let mut names: Vec<String> = fs::read_dir(dir.path())
+            .expect("read dir")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["steam.cfg", "steam.exe"]);
+    }
+
+    #[test]
+    fn is_blocked_ignores_a_commented_directive() {
+        let dir = steam_dir();
+        fs::write(
+            dir.path().join("steam.cfg"),
+            "#BootStrapperInhibitAll=Enable\n",
+        )
+        .expect("seed steam.cfg");
+
+        assert!(!guard(&dir).is_blocked().expect("read state"));
+    }
+
+    #[test]
+    fn a_directory_without_steam_exe_is_rejected() {
+        let dir = tempfile::tempdir().expect("temp dir");
+
+        let error = guard(&dir).unblock_updates().expect_err("must refuse");
+
+        assert!(error.contains("steam.exe"), "unexpected error: {error}");
+    }
+}

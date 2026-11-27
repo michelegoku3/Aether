@@ -110,7 +110,6 @@ describe('AetherView uninstall flow', () => {
   it('shows the Reset Steam path confirm when Steam residuals exist, then resets and uninstalls', async () => {
     await openUninstallConfirmAndConfirm(3, {
       reset_aether_steam_path: 'ok',
-      unblock_steam_updates: 'ok',
       uninstall_aether_desk: 'ok',
     });
 
@@ -134,11 +133,13 @@ describe('AetherView uninstall flow', () => {
     await act(async () => {
       fireEvent.click(yesButton);
     });
-    await act(async () => {}); // drain the reset + unblock + uninstall chain
+    await act(async () => {}); // drain the reset + uninstall chain
 
     expect(invokeMock).toHaveBeenCalledWith('probe_aether_steam_residuals');
     expect(invokeMock).toHaveBeenCalledWith('reset_aether_steam_path', { allowSteamKill: false });
     expect(invokeMock).toHaveBeenCalledWith('uninstall_aether_desk', { deleteUserData: false });
+    // The reset already removes steam.cfg: no second IPC has to unblock it.
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'unblock_steam_updates')).toHaveLength(0);
   });
 
   it('lets NO on the reset confirm skip the Steam clean and just uninstall', async () => {
@@ -178,7 +179,7 @@ describe('AetherView Steam close confirm', () => {
   const aetherDllPanel = () =>
     screen.getByText('AetherDLL', { selector: '.panel-title' }).closest('.aether-panel') as HTMLElement;
 
-  const renderView = async (commands: Record<string, unknown>, dllInstalled = true) => {
+  const renderView = async (commands: Record<string, unknown>, dllInstalled = true, isSteamBlocked = false) => {
     mockInvokeCommands({ get_settings: {}, ...commands });
     render(
       <AetherView
@@ -186,7 +187,7 @@ describe('AetherView Steam close confirm', () => {
         dllStatus={{
           isInstalled: dllInstalled,
           installedVersion: dllInstalled ? '1.0.0' : 'N/A',
-          isSteamBlocked: false,
+          isSteamBlocked,
         }}
       />
     );
@@ -244,7 +245,7 @@ describe('AetherView Steam close confirm', () => {
   });
 
   it('closes Steam only after the Reset Path countdown and its own YES', async () => {
-    await renderView({ probe_steam_running: true, reset_aether_steam_path: 'ok', unblock_steam_updates: 'ok' });
+    await renderView({ probe_steam_running: true, reset_aether_steam_path: 'ok' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset Path' }));
     for (let elapsed = 0; elapsed < 10; elapsed += 1) {
@@ -262,7 +263,8 @@ describe('AetherView Steam close confirm', () => {
     await act(async () => {});
 
     expect(invokeMock).toHaveBeenCalledWith('reset_aether_steam_path', { allowSteamKill: true });
-    expect(invokeMock).toHaveBeenCalledWith('unblock_steam_updates');
+    // The reset deletes steam.cfg itself, so the old extra unblock IPC is gone.
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'unblock_steam_updates')).toHaveLength(0);
   });
 
   it('skips the Steam clean but still uninstalls AetherDesk on NO', async () => {
@@ -288,7 +290,6 @@ describe('AetherView Steam close confirm', () => {
     await openUninstallConfirmAndConfirm(3, {
       probe_steam_running: true,
       reset_aether_steam_path: 'ok',
-      unblock_steam_updates: 'ok',
       uninstall_aether_desk: 'ok',
     });
 
@@ -305,7 +306,7 @@ describe('AetherView Steam close confirm', () => {
     await act(async () => {});
 
     expect(invokeMock).toHaveBeenCalledWith('reset_aether_steam_path', { allowSteamKill: true });
-    expect(invokeMock).toHaveBeenCalledWith('unblock_steam_updates');
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'unblock_steam_updates')).toHaveLength(0);
     expect(invokeMock).toHaveBeenCalledWith('uninstall_aether_desk', { deleteUserData: false });
     expect(screen.queryByText(STEAM_CLOSE_LEAD)).not.toBeInTheDocument();
   });
@@ -345,5 +346,60 @@ describe('AetherView Steam close confirm', () => {
     await act(async () => {});
 
     expect(invokeMock.mock.calls.filter(([command]) => command === 'install_aether_dll')).toHaveLength(1);
+  });
+
+  it('asks before closing Steam when Block Update is clicked', async () => {
+    await renderView({ probe_steam_running: true, block_steam_updates: 'blocked' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Block Update' }));
+    await act(async () => {});
+
+    expect(screen.getByText(STEAM_CLOSE_LEAD)).toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith('block_steam_updates', expect.anything());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    await act(async () => {});
+
+    expect(invokeMock).toHaveBeenCalledWith('block_steam_updates', { allowSteamKill: true });
+  });
+
+  it('unblocks without a popup when Steam is closed', async () => {
+    await renderView({ probe_steam_running: false, unblock_steam_updates: 'unblocked' }, true, true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock Update' }));
+    await act(async () => {});
+
+    expect(screen.queryByText(STEAM_CLOSE_LEAD)).not.toBeInTheDocument();
+    expect(invokeMock).toHaveBeenCalledWith('unblock_steam_updates', { allowSteamKill: false });
+  });
+
+  it('leaves the update block untouched on NO', async () => {
+    await renderView({ probe_steam_running: true, unblock_steam_updates: 'unblocked' }, true, true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock Update' }));
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'No' }));
+    await act(async () => {});
+
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'unblock_steam_updates')).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Unlock Update' })).toBeEnabled();
+  });
+
+  it('runs one update-block toggle at a time while the probe is pending', async () => {
+    let answer: ((value: boolean) => void) | undefined;
+    const pendingProbe = new Promise<boolean>((resolve) => {
+      answer = resolve;
+    });
+    await renderView({ probe_steam_running: pendingProbe, block_steam_updates: 'blocked' });
+    const toggle = screen.getByRole('button', { name: 'Block Update' });
+
+    await act(async () => {
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      answer?.(false);
+    });
+    await act(async () => {});
+
+    expect(invokeMock.mock.calls.filter(([command]) => command === 'block_steam_updates')).toHaveLength(1);
   });
 });

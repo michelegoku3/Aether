@@ -881,8 +881,8 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("check_aether_dll_update", &[]),
         ("is_dll_installed", &[]),
         ("is_steam_blocked", &[]),
-        ("block_steam_updates", &[]),
-        ("unblock_steam_updates", &[]),
+        ("block_steam_updates", &["allowSteamKill"]),
+        ("unblock_steam_updates", &["allowSteamKill"]),
         // Stable contracts (see docs/shared_contracts.md §7 for the wire-key table).
         ("save_settings", &["settings", "base"]),
         ("get_recent_log_lines", &["tailLines", "source"]),
