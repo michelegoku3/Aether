@@ -34,6 +34,8 @@ type SteamGatedAction =
   | { kind: 'installDll' }
   | { kind: 'uninstallDll' }
   | { kind: 'resetPath' }
+  | { kind: 'blockSteamUpdates' }
+  | { kind: 'unblockSteamUpdates' }
   | { kind: 'uninstallDesk'; deleteUserData: boolean };
 
 /**
@@ -162,15 +164,15 @@ export const AetherView = memo(function AetherView({
     await invoke('uninstall_aether_desk', { deleteUserData });
   };
 
-  /** Optional Reset Path + unblock, then real folder uninstall. */
+  /** Optional Reset Path, then real folder uninstall. */
   const cleanSteamThenUninstall = async (deleteUserData: boolean, allowSteamKill: boolean) => {
     showStatus('Resetting the Steam path, then uninstalling AetherDesk...', 'info');
     try {
-      // The backend commands resolve the Steam path from settings: only the two
-      // Steam calls remain here, in this order.
+      // The backend commands resolve the Steam path from settings: only the
+      // reset call remains here. It already deletes steam.cfg (one of the
+      // Aether-created files), so updates are unblocked by that step alone.
       const args: SteamKillConsentArgs = { allowSteamKill };
       await invoke('reset_aether_steam_path', args);
-      await invoke('unblock_steam_updates').catch(() => {});
       await refreshAfterDllChange().catch(() => {});
       await finishUninstall(deleteUserData);
     } catch (err: unknown) {
@@ -298,15 +300,30 @@ export const AetherView = memo(function AetherView({
     showStatus('Resetting configurations... Removing custom plugins and update blocks.', 'info');
     const args: SteamKillConsentArgs = { allowSteamKill };
     try {
-      const result = await (async () => {
-        const msg = await invoke<string>('reset_aether_steam_path', args);
-        await invoke('unblock_steam_updates').catch(() => {});
-        return msg;
-      })();
+      // `reset_aether_steam_path` removes every Aether-created file, steam.cfg
+      // included: no second IPC has to unblock Steam updates.
+      const msg = await invoke<string>('reset_aether_steam_path', args);
       await refreshAfterDllChange();
-      showStatus(result, 'success');
+      showStatus(msg, 'success');
     } catch (err: unknown) {
       showStatus(`Reset operation failed: ${toErrorMessage(err)}`, 'error');
+    }
+  };
+
+  const setSteamUpdateBlock = async (blocked: boolean, allowSteamKill: boolean) => {
+    const args: SteamKillConsentArgs = { allowSteamKill };
+    showStatus(blocked ? 'Blocking Steam updates...' : 'Unblocking Steam updates...', 'info');
+    try {
+      const msg = await invoke<string>(blocked ? 'block_steam_updates' : 'unblock_steam_updates', args);
+      showStatus(msg, 'success');
+    } catch (err: unknown) {
+      showStatus(`Operation failed: ${toErrorMessage(err)}`, 'error');
+    } finally {
+      // The label is derived from the persisted state: refresh even after a
+      // failure, because the gate may already have closed Steam. The read is
+      // advisory, so a failure here must not turn a successful write into a
+      // rejected promise.
+      await onDllStatusChange().catch(() => {});
     }
   };
 
@@ -318,6 +335,10 @@ export const AetherView = memo(function AetherView({
         return uninstallDll(allowSteamKill);
       case 'resetPath':
         return resetSteamPath(allowSteamKill);
+      case 'blockSteamUpdates':
+        return setSteamUpdateBlock(true, allowSteamKill);
+      case 'unblockSteamUpdates':
+        return setSteamUpdateBlock(false, allowSteamKill);
       case 'uninstallDesk':
         return cleanSteamThenUninstall(action.deleteUserData, allowSteamKill);
     }
@@ -393,16 +414,13 @@ export const AetherView = memo(function AetherView({
     }
   };
 
-  const handleToggleSteamBlock = async () => {
-    try {
-      const msg = dllStatus.isSteamBlocked
-        ? await invoke<string>('unblock_steam_updates')
-        : await invoke<string>('block_steam_updates');
-      await onDllStatusChange();
-      showStatus(msg, 'success');
-    } catch (err: unknown) {
-      showStatus(`Operation failed: ${toErrorMessage(err)}`, 'error');
-    }
+  const handleToggleSteamBlock = () => {
+    // Both directions write into the Steam folder, so they go through the same
+    // gate as install/uninstall: Steam is closed (with consent) before the file
+    // is touched, and the panel stays locked while the user decides.
+    return requestSteamGatedAction({
+      kind: dllStatus.isSteamBlocked ? 'unblockSteamUpdates' : 'blockSteamUpdates',
+    });
   };
 
   const handleResetPath = async () => {
@@ -513,7 +531,7 @@ export const AetherView = memo(function AetherView({
           <span className="panel-title">Steam</span>
         </div>
         <div className="panel-actions">
-          <button onClick={handleToggleSteamBlock} className="panel-btn" disabled={isProcessing}>
+          <button onClick={() => void handleToggleSteamBlock()} className="panel-btn" disabled={isProcessing}>
             {dllStatus.isSteamBlocked ? 'Unlock Update' : 'Block Update'}
           </button>
 

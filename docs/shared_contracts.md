@@ -265,7 +265,7 @@ Promise rejected at runtime with `command X missing required key Y`.
 | `game_name: Option<String>` | `gameName` | `trigger_luatools_download` / `prepare_luatools_specific_version_download`: optional hint forwarded to lua.tools (`&game_name=`), labels only the account's download history |
 | `include_subscriptions: bool` | `includeSubscriptions` | `sync_hubcap_workshop_manifests`: `true` only from the explicit Repair action; the background monitor calls the Rust function with `false` |
 | `show_online: bool` | `showOnline` | §7.1 |
-| `allow_steam_kill: bool` | `allowSteamKill` | `install_aether_dll` / `uninstall_aether_dll` / `reset_aether_steam_path` / `save_game_achievements`: `true` only after the user accepts the "Close Steam?" popup; the backend then terminates Steam (if still running) and every running game from its libraries before writing into the Steam folder |
+| `allow_steam_kill: bool` | `allowSteamKill` | `install_aether_dll` / `uninstall_aether_dll` / `reset_aether_steam_path` / `block_steam_updates` / `unblock_steam_updates` / `save_game_achievements`: `true` only after the user accepts the "Close Steam?" popup; the backend then terminates Steam (if still running) and every running game from its libraries before writing into the Steam folder |
 | `account_id: Option<u32>` / `u32` | `accountId` | `get_game_achievements` / `save_game_achievements` |
 
 ### 7.1 `showonline` is a value, not a key

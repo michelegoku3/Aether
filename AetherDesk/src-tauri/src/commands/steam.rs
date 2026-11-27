@@ -125,29 +125,109 @@ pub fn is_steam_blocked(app: tauri::AppHandle) -> Result<bool, String> {
     SteamUpdateGuard::new(steam_path).is_blocked()
 }
 
-#[tauri::command]
-pub fn block_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
-    // Write into the Steam folder: strict validation, readable error.
-    let steam_path = command_steam_path(&app)?;
-    crate::desk_log_info!(
-        "steam",
-        "Blocking Steam updates in directory '{}'",
-        steam_path
-    );
-    SteamUpdateGuard::new(steam_path).block_updates()?;
-    Ok("Steam updates are now blocked.".to_string())
+/// Steam must not be running while Aether rewrites or removes its bootstrapper
+/// config. The gate refuses without the user's YES from the "Close Steam?"
+/// popup, so a stale or hostile client can never make AetherDesk terminate
+/// anything silently.
+const STEAM_UPDATE_RUNNING_ERROR: &str =
+    "Steam is currently running. Close Steam completely before changing the Steam update block.";
+
+fn ensure_update_block_steam_closed(
+    steam_path: &str,
+    allow_steam_kill: bool,
+) -> Result<(), String> {
+    crate::core::steam_process::ensure_steam_closed_with_message(
+        std::path::Path::new(steam_path),
+        allow_steam_kill,
+        STEAM_UPDATE_RUNNING_ERROR,
+        "a Steam update-block change",
+    )
+    .map_err(|error| {
+        crate::desk_log_warn!("steam", "Steam update-block change aborted: {}", error);
+        error
+    })
 }
 
+/// Blocks Steam client updates by writing `BootStrapperInhibitAll=Enable` into
+/// `<Steam>\steam.cfg`. Runs on the blocking pool: with the user's consent the
+/// gate terminates Steam and waits for its whole process family to exit.
 #[tauri::command]
-pub fn unblock_steam_updates(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn block_steam_updates(
+    app: tauri::AppHandle,
+    allow_steam_kill: bool,
+) -> Result<String, String> {
+    // Write into the Steam folder: strict validation, readable error.
     let steam_path = command_steam_path(&app)?;
-    crate::desk_log_info!(
-        "steam",
-        "Unblocking Steam updates in directory '{}'",
-        steam_path
-    );
-    SteamUpdateGuard::new(steam_path).unblock_updates()?;
-    Ok("Steam updates are now unblocked.".to_string())
+
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::desk_log_info!(
+            "steam",
+            "Block Steam updates requested (allowSteamKill={}, dir='{}')",
+            allow_steam_kill,
+            steam_path
+        );
+        ensure_update_block_steam_closed(&steam_path, allow_steam_kill)?;
+
+        let guard = SteamUpdateGuard::new(steam_path.as_str());
+        let cfg_path = guard.config_path();
+        crate::desk_log_info!(
+            "steam",
+            "Writing '{}' through a temp file + rename (previous file present={})",
+            cfg_path.display(),
+            cfg_path.exists()
+        );
+        guard.block_updates()?;
+        crate::desk_log_info!(
+            "steam",
+            "steam.cfg written; is_blocked()={}",
+            guard.is_blocked()?
+        );
+        Ok("Steam updates are now blocked.".to_string())
+    })
+    .await
+    .map_err(|error| format!("Steam update block task failed to run: {error}"))?
+}
+
+/// Re-enables Steam client updates by deleting `<Steam>\steam.cfg`.
+///
+/// Deleting is deliberate: an absent file is the state Steam reads as "not
+/// blocked", and it cannot be left truncated or malformed by a half-finished
+/// write. Nothing is restarted afterwards; Steam applies the change at its next
+/// start, which is why the message tells the user to open it.
+#[tauri::command]
+pub async fn unblock_steam_updates(
+    app: tauri::AppHandle,
+    allow_steam_kill: bool,
+) -> Result<String, String> {
+    let steam_path = command_steam_path(&app)?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::desk_log_info!(
+            "steam",
+            "Unblock Steam updates requested (allowSteamKill={}, dir='{}')",
+            allow_steam_kill,
+            steam_path
+        );
+        ensure_update_block_steam_closed(&steam_path, allow_steam_kill)?;
+
+        let guard = SteamUpdateGuard::new(steam_path.as_str());
+        let cfg_path = guard.config_path();
+        crate::desk_log_info!(
+            "steam",
+            "Deleting '{}' (present={}); an absent file is what resumes client updates",
+            cfg_path.display(),
+            cfg_path.exists()
+        );
+        guard.unblock_updates()?;
+        crate::desk_log_info!(
+            "steam",
+            "steam.cfg removal finished; is_blocked()={}",
+            guard.is_blocked()?
+        );
+        Ok("Steam updates are now unblocked.".to_string())
+    })
+    .await
+    .map_err(|error| format!("Steam update unblock task failed to run: {error}"))?
 }
 
 // UTC `YYYYmmdd-HHmmss`, the only date code this crate needs: backup names sort

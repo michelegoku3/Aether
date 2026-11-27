@@ -1,16 +1,25 @@
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
 const STEAM_CFG_FILE_NAME: &str = "steam.cfg";
+/// Sibling the block write goes through before the rename: a crash mid-write
+/// must never truncate the live `steam.cfg`.
+const TEMP_FILE_SUFFIX: &str = ".aether-tmp";
 const UPDATE_BLOCK_KEY: &str = "BootStrapperInhibitAll";
 const BLOCKED_VALUE: &str = "Enable";
-const UNBLOCKED_VALUE: &str = "Disable";
 
-/// Owns every read/write operation related to Steam's update guard config.
+/// Owns every read/write/delete operation related to Steam's update guard config.
 ///
 /// The UI and Tauri commands should not know how `steam.cfg` is structured:
 /// they only ask whether updates are blocked or request a state change.
 /// This keeps file parsing/writing isolated and easier to maintain.
+///
+/// Only the blocked state needs a file: Steam reads `steam.cfg` at boot, so the
+/// directive is written through a temp file and renamed (a partial write can
+/// never leave a truncated config behind). Re-enabling updates **deletes** the
+/// file instead of writing `Disable`: absence is the state Steam treats as "no
+/// block", and a file that does not exist cannot be malformed.
 pub struct SteamUpdateGuard {
     steam_dir: PathBuf,
 }
@@ -49,29 +58,64 @@ impl SteamUpdateGuard {
     }
 
     pub fn block_updates(&self) -> Result<(), String> {
-        self.set_blocked(true)
-    }
-
-    pub fn unblock_updates(&self) -> Result<(), String> {
-        self.set_blocked(false)
-    }
-
-    fn set_blocked(&self, blocked: bool) -> Result<(), String> {
         self.validate_steam_dir()?;
 
         let cfg_path = self.config_path();
-        if !cfg_path.exists() && !blocked {
-            return Ok(());
-        }
-
         let content = if cfg_path.exists() {
             self.read_config()?
         } else {
             String::new()
         };
-        let next_content = self.upsert_update_directive(&content, blocked);
 
-        fs::write(cfg_path, next_content).map_err(|e| format!("Failed to update steam.cfg: {}", e))
+        self.write_config_atomically(&self.upsert_update_directive(&content))
+    }
+
+    /// Re-enables Steam client updates by removing `steam.cfg`.
+    ///
+    /// Deleting is the one transition that cannot corrupt the guard: Steam
+    /// treats an absent file as "not blocked", while a rewritten one can be
+    /// truncated or carry a directive its bootstrapper rejects. Absent file is
+    /// therefore a success, not an error (idempotent unlock).
+    pub fn unblock_updates(&self) -> Result<(), String> {
+        self.validate_steam_dir()?;
+
+        let cfg_path = self.config_path();
+        if !cfg_path.exists() {
+            return Ok(());
+        }
+
+        fs::remove_file(&cfg_path).map_err(|e| format!("Failed to delete steam.cfg: {}", e))
+    }
+
+    /// Writes the whole config through a sibling temp file, then renames it over
+    /// `steam.cfg`. `fs::rename` replaces the destination atomically on the same
+    /// volume, so Steam (which reads the file at boot) never observes a partial
+    /// write.
+    fn write_config_atomically(&self, content: &str) -> Result<(), String> {
+        let cfg_path = self.config_path();
+        let temp_path = self.temp_config_path();
+
+        let written = fs::File::create(&temp_path).and_then(|mut file| {
+            file.write_all(content.as_bytes())?;
+            file.sync_all()
+        });
+        if let Err(error) = written {
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("Failed to update steam.cfg: {}", error));
+        }
+
+        if let Err(error) = fs::rename(&temp_path, &cfg_path) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(format!("Failed to update steam.cfg: {}", error));
+        }
+
+        Ok(())
+    }
+
+    fn temp_config_path(&self) -> PathBuf {
+        let mut name = self.config_path().into_os_string();
+        name.push(TEMP_FILE_SUFFIX);
+        PathBuf::from(name)
     }
 
     fn validate_steam_dir(&self) -> Result<(), String> {
@@ -88,8 +132,8 @@ impl SteamUpdateGuard {
             .map_err(|e| format!("Failed to read steam.cfg: {}", e))
     }
 
-    fn upsert_update_directive(&self, content: &str, blocked: bool) -> String {
-        let directive = self.render_directive(blocked).trim_end().to_string();
+    fn upsert_update_directive(&self, content: &str) -> String {
+        let directive = self.render_directive().trim_end().to_string();
         let mut found = false;
 
         let mut lines: Vec<String> = content
@@ -120,13 +164,8 @@ impl SteamUpdateGuard {
         output
     }
 
-    fn render_directive(&self, blocked: bool) -> String {
-        let value = if blocked {
-            BLOCKED_VALUE
-        } else {
-            UNBLOCKED_VALUE
-        };
-        format!("{}={}\n", UPDATE_BLOCK_KEY, value)
+    fn render_directive(&self) -> String {
+        format!("{}={}\n", UPDATE_BLOCK_KEY, BLOCKED_VALUE)
     }
 
     fn parse_key_value(line: &str) -> Option<(&str, &str)> {
