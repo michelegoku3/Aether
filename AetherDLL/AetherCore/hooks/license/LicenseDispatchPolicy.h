@@ -27,6 +27,12 @@ constexpr bool CanDrainLicenseWork(bool onSteamMainThread, int nestedSteamCallDe
     return onSteamMainThread && nestedSteamCallDepth == 0 && !alreadyDraining;
 }
 
+// SteamUI cards must only be asked to rebuild after ProcessPendingLicenseUpdates
+// actually rebuilt Steam's appToLicenses cache (`applied == true`).
+constexpr bool ShouldNotifyUiAfterRefresh(bool hadDeferredRefresh, bool steamUiStarted, bool applied) noexcept {
+    return applied && (hadDeferredRefresh || steamUiStarted);
+}
+
 struct LicenseDispatchBatch {
     bool acquirePackage0 = false;
     bool hotReload = false;
@@ -49,20 +55,69 @@ struct LicenseDispatchQueue {
     std::vector<steam::AppId> removeApps;
     std::vector<steam::AppId> updateCheckApps;
     std::uint64_t deferStartedMs = 0;
+    bool rebuildPending = false;
+    std::uint64_t lastRefreshMs = 0;
+    std::uint32_t refreshRetryCount = 0;
 
     void RequestAcquirePackage0() noexcept { acquirePackage0 = true; }
-    void RequestHotReload() noexcept { hotReload = true; }
+    void RequestHotReload() noexcept {
+        hotReload = true;
+        refreshRetryCount = 0;
+    }
     void RequestRefresh() noexcept { refresh = true; }
 
     void RequestApp(steam::AppId appId) {
         RemoveId(removeApps, appId);
         AppendUnique(apps, appId);
+        if (appId != 0)
+            refreshRetryCount = 0;
     }
     void RequestRemoveApp(steam::AppId appId) {
         RemoveId(apps, appId);
         AppendUnique(removeApps, appId);
+        if (appId != 0)
+            refreshRetryCount = 0;
     }
     void RequestUpdateCheck(steam::AppId appId) { AppendUnique(updateCheckApps, appId); }
+
+    // Records whether ProcessPendingLicenseUpdates rebuilt Steam's license
+    // cache (`applied`) or returned 0 while PICS/package state was still loading.
+    void NoteRefreshResult(bool applied, std::uint64_t nowMs, bool& outClearedPending) noexcept {
+        if (applied) {
+            outClearedPending = rebuildPending;
+            rebuildPending = false;
+            lastRefreshMs = 0;
+            refreshRetryCount = 0;
+            return;
+        }
+        outClearedPending = false;
+        rebuildPending = true;
+        lastRefreshMs = nowMs;
+        ++refreshRetryCount;
+    }
+
+    // Clears pending rebuild tracking when Steam's own run-frame call later
+    // succeeds (`ProcessPendingLicenseUpdates == true`).
+    [[nodiscard]] bool NoteExternalUpdatesApplied() noexcept {
+        if (!rebuildPending)
+            return false;
+        rebuildPending = false;
+        lastRefreshMs = 0;
+        refreshRetryCount = 0;
+        return true;
+    }
+
+    // Queues one coalesced refresh retry after `retryIntervalMs`, bounded by
+    // `maxAttempts` so an offline client never spins endlessly.
+    [[nodiscard]] bool MaybeQueuePendingRetry(std::uint64_t nowMs, std::uint64_t retryIntervalMs,
+                                              std::uint32_t maxAttempts) noexcept {
+        if (!rebuildPending || refresh || refreshRetryCount >= maxAttempts)
+            return false;
+        if (nowMs < lastRefreshMs || (nowMs - lastRefreshMs) < retryIntervalMs)
+            return false;
+        refresh = true;
+        return true;
+    }
 
     [[nodiscard]] bool HasPendingWork() const noexcept {
         return acquirePackage0 || hotReload || refresh || !apps.empty() || !removeApps.empty() ||

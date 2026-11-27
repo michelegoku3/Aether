@@ -33,6 +33,8 @@ namespace {
 
 constexpr const char* kModule = "License";
 constexpr std::uint64_t kMaxUiRecheckDeferMs = 500;
+constexpr std::uint64_t kRebuildRetryIntervalMs = 2000;
+constexpr std::uint32_t kMaxRebuildAttempts = 16;
 using steam::AppId;
 using steam::PackageInfo;
 namespace policy = ac::hooks::license::policy;
@@ -267,6 +269,12 @@ PackageSeedResult SeedPackageVectors(PackageInfo* pkg, const std::vector<AppId>&
     return out;
 }
 
+void TriggerLibraryRecheck() {
+    const std::vector<AppId> roots = luadata::LibraryAppIds();
+    if (!roots.empty())
+        hooks::steamui::RequestAppRecheck(roots);
+}
+
 // Asks Steam to re-evaluate licenses. Must run on `BMainLoop` (`t_draining ==
 // true`) so Steam's `BCheckUserLicensesUpdate` and `CPackageInfo` RB-tree are
 // never mutated concurrently by two threads.
@@ -281,20 +289,35 @@ bool RefreshLicensesOnSteamThread(const char* reason) {
     ac::hooks::MarkLicenseAsChangedOnSteamThread(cUser, 0, true);
     ++g_state.licenseReloadDirectCount;
     const bool applied = ac::hooks::ProcessPendingLicenseUpdatesOnSteamThread(cUser);
+    const std::uint64_t nowMs = GetTickCount64();
+    bool clearedPending = false;
+    std::uint32_t attempt = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_state.licenseQueueMutex);
+        g_state.licenseQueue.NoteRefreshResult(applied, nowMs, clearedPending);
+        attempt = g_state.licenseQueue.refreshRetryCount;
+        g_state.licenseRebuildPending.store(g_state.licenseQueue.rebuildPending, std::memory_order_release);
+        g_state.nextLicenseRetryMs.store(applied ? 0 : (nowMs + kRebuildRetryIntervalMs), std::memory_order_release);
+    }
     if (g_state.pPackage0.load(std::memory_order_acquire) != nullptr)
         g_state.package0Published.store(true, std::memory_order_release);
-    AC_LOG_INFO(kModule, "License refresh (%s, applied=%d, tid=%lu).", reason ? reason : "unknown", applied ? 1 : 0,
-                static_cast<unsigned long>(GetCurrentThreadId()));
+    if (applied) {
+        AC_LOG_INFO(kModule, "License refresh (%s, applied=1%s, tid=%lu).", reason ? reason : "unknown",
+                    clearedPending ? ", cleared_pending=1" : "", static_cast<unsigned long>(GetCurrentThreadId()));
+    } else {
+        AC_LOG_WARN(kModule,
+                    "License refresh deferred in Steam (%s, applied=0, attempt=%u/%u, tid=%lu): waiting for "
+                    "AppInfo/package cache before UI recheck.",
+                    reason ? reason : "unknown", attempt, kMaxRebuildAttempts,
+                    static_cast<unsigned long>(GetCurrentThreadId()));
+    }
     diag::Record("license_refresh", reason ? reason : "unknown");
 
     const bool steamUiStarted = g_state.overview.fills.load(std::memory_order_relaxed) > 0 ||
                                 g_state.overview.appController.load(std::memory_order_acquire) != nullptr ||
                                 g_state.overview.appChangeSource.load(std::memory_order_acquire) != nullptr;
-    if (wasDeferred || steamUiStarted) {
-        const std::vector<AppId> roots = luadata::LibraryAppIds();
-        if (!roots.empty())
-            hooks::steamui::RequestAppRecheck(roots);
-    }
+    if (policy::ShouldNotifyUiAfterRefresh(wasDeferred, steamUiStarted, applied))
+        TriggerLibraryRecheck();
     return true;
 }
 
@@ -356,8 +379,12 @@ void RemoveAppsFromPackage0OnSteamThread(const std::vector<AppId>& requestedRemo
     std::size_t removedDepots = 0;
     RemoveAllFromPackage0(pkg, pkg->appIdVec, candidates, removedApps);
     RemoveAllFromPackage0(pkg, pkg->depotIdVec, candidates, removedDepots);
-    if (removedApps == 0 && removedDepots == 0)
+    if (removedApps == 0 && removedDepots == 0) {
+        AC_LOG_DEBUG(kModule,
+                     "Package 0 prune for %zu app(s): already absent from appIdVec/depotIdVec (rebuild_pending=%d).",
+                     candidates.size(), g_state.licenseRebuildPending.load(std::memory_order_acquire) ? 1 : 0);
         return;
+    }
 
     const std::uint32_t total = pkg->appIdVec.size;
     g_state.package0AppCount.store(static_cast<std::size_t>(total), std::memory_order_relaxed);
@@ -616,22 +643,68 @@ void WakeStartupRetry() {
     SignalStartupRetry();
 }
 
+void OnSteamLicenseUpdatesApplied() {
+    if (!g_state.licenseRebuildPending.load(std::memory_order_acquire))
+        return;
+    bool resolved = false;
+    {
+        std::lock_guard<std::mutex> lock(g_state.licenseQueueMutex);
+        resolved = g_state.licenseQueue.NoteExternalUpdatesApplied();
+        g_state.licenseRebuildPending.store(g_state.licenseQueue.rebuildPending, std::memory_order_release);
+        if (resolved)
+            g_state.nextLicenseRetryMs.store(0, std::memory_order_release);
+    }
+    if (!resolved)
+        return;
+    AC_LOG_INFO(kModule, "Steam applied pending license rebuild asynchronously; triggering overview recheck.");
+    diag::Record("license_refresh", "async-applied");
+    TriggerLibraryRecheck();
+    status::Write();
+}
+
 void NotifyLicenseChanged() {
     EnqueueWork([](policy::LicenseDispatchQueue& q) { q.RequestHotReload(); });
     AC_LOG_INFO(kModule, "Package 0 hot-reload queued for steamclient main thread.");
 }
 
 void TryDrainOnSteamThread() {
-    if (!g_state.licenseWorkPending.load(std::memory_order_acquire))
-        return;
+    const bool workPending = g_state.licenseWorkPending.load(std::memory_order_acquire);
+    if (!workPending) {
+        if (!g_state.licenseRebuildPending.load(std::memory_order_acquire))
+            return;
+        const std::uint64_t nextRetryMs = g_state.nextLicenseRetryMs.load(std::memory_order_relaxed);
+        if (nextRetryMs == 0 || GetTickCount64() < nextRetryMs)
+            return;
+    }
     if (!policy::CanDrainLicenseWork(IsSteamMainThread(), t_steamLicenseDepth, t_draining))
         return;
 
     policy::LicenseDispatchBatch batch;
+    bool retryQueued = false;
+    std::uint32_t retryAttempt = 0;
     {
         std::lock_guard<std::mutex> lock(g_state.licenseQueueMutex);
+        const std::uint64_t nowMs = GetTickCount64();
+        if (g_state.licenseQueue.MaybeQueuePendingRetry(nowMs, kRebuildRetryIntervalMs, kMaxRebuildAttempts)) {
+            retryQueued = true;
+            retryAttempt = g_state.licenseQueue.refreshRetryCount + 1;
+        } else if (g_state.licenseQueue.rebuildPending && !g_state.licenseQueue.refresh) {
+            if (g_state.licenseQueue.refreshRetryCount >= kMaxRebuildAttempts) {
+                g_state.nextLicenseRetryMs.store(0, std::memory_order_relaxed);
+                AC_LOG_WARN_ONCE(kModule,
+                                 "License rebuild retry budget (%u attempts) exhausted; waiting for Steam PICS "
+                                 "completion.",
+                                 kMaxRebuildAttempts);
+            } else {
+                g_state.nextLicenseRetryMs.store(g_state.licenseQueue.lastRefreshMs + kRebuildRetryIntervalMs,
+                                                 std::memory_order_relaxed);
+            }
+        }
         batch = g_state.licenseQueue.TakeBatch();
         g_state.licenseWorkPending.store(g_state.licenseQueue.HasPendingWork(), std::memory_order_release);
+    }
+    if (retryQueued) {
+        AC_LOG_DEBUG(kModule, "Queued pending license rebuild retry %u/%u.", retryAttempt, kMaxRebuildAttempts);
     }
     if (batch.Empty())
         return;

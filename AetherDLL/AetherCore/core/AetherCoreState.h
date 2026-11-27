@@ -408,6 +408,11 @@ struct AetherCoreState {
     // Lock-free fast-path hint checked on every RecvPkt/IPCProcessMessage before
     // taking licenseQueueMutex.
     std::atomic<bool> licenseWorkPending{false};
+    // True after MarkLicenseAsChanged + ProcessPendingLicenseUpdates returned
+    // false (0) because package/AppInfo caches were not ready yet; cleared when
+    // a retry or Steam's own ProcessPendingLicenseUpdates returns true.
+    std::atomic<bool> licenseRebuildPending{false};
+    std::atomic<std::uint64_t> nextLicenseRetryMs{0};
     mutable std::mutex licenseQueueMutex;
     hooks::license::policy::LicenseDispatchQueue licenseQueue;
 

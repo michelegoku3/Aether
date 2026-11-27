@@ -110,6 +110,63 @@ void RemoveAppCancelsPendingAddAndDefersUiRecheck() {
     CHECK(batch2.removeApps.empty());
 }
 
+void UnappliedRefreshRetriesWithinBudgetAndRechecksOnlyWhenApplied() {
+    using ac::hooks::license::policy::ShouldNotifyUiAfterRefresh;
+    CHECK(!ShouldNotifyUiAfterRefresh(true, true, false));
+    CHECK(ShouldNotifyUiAfterRefresh(false, true, true));
+    CHECK(ShouldNotifyUiAfterRefresh(true, false, true));
+
+    LicenseDispatchQueue q;
+    q.RequestRemoveApp(2868840);
+    const auto initial = q.TakeBatch();
+    CHECK(initial.removeApps == (std::vector<AppId>{2868840}));
+
+    bool cleared = false;
+    q.NoteRefreshResult(/*applied=*/false, /*nowMs=*/1000, cleared);
+    CHECK(!cleared);
+    CHECK(q.rebuildPending);
+    CHECK_EQ(q.refreshRetryCount, 1u);
+
+    // Does not spin before the retry interval elapses.
+    CHECK(!q.MaybeQueuePendingRetry(/*nowMs=*/2500, /*retryIntervalMs=*/2000, /*maxAttempts=*/3));
+    CHECK(!q.HasPendingWork());
+
+    // Once the interval elapses, queues a coalesced refresh retry.
+    CHECK(q.MaybeQueuePendingRetry(/*nowMs=*/3000, /*retryIntervalMs=*/2000, /*maxAttempts=*/3));
+    CHECK(q.HasPendingWork());
+    const auto retry1 = q.TakeBatch();
+    CHECK(retry1.refresh);
+
+    // Failing again bumps attempt count; reaching maxAttempts stops polling.
+    q.NoteRefreshResult(false, 3000, cleared);
+    CHECK_EQ(q.refreshRetryCount, 2u);
+    CHECK(q.MaybeQueuePendingRetry(5000, 2000, 3));
+    (void)q.TakeBatch();
+    q.NoteRefreshResult(false, 5000, cleared);
+    CHECK_EQ(q.refreshRetryCount, 3u);
+    CHECK(!q.MaybeQueuePendingRetry(9000, 2000, 3));
+
+    // A later Steam-native ProcessPendingLicenseUpdates() == true resolves
+    // the pending rebuild cleanly; a second call is a no-op.
+    CHECK(q.NoteExternalUpdatesApplied());
+    CHECK(!q.rebuildPending);
+    CHECK_EQ(q.refreshRetryCount, 0u);
+    CHECK(!q.NoteExternalUpdatesApplied());
+
+    // New mutations reset retry budget so fresh hot-reloads always retry.
+    q.NoteRefreshResult(false, 10000, cleared);
+    q.NoteRefreshResult(false, 12000, cleared);
+    CHECK_EQ(q.refreshRetryCount, 2u);
+    q.RequestHotReload();
+    CHECK_EQ(q.refreshRetryCount, 0u);
+    (void)q.TakeBatch();
+    q.NoteRefreshResult(true, 13000, cleared);
+    // Note: since rebuildPending was still true before reload applied,
+    // applied=true reports cleared=true.
+    CHECK(cleared);
+    CHECK(!q.rebuildPending);
+}
+
 } // namespace
 
 void LicenseDispatchTest() {
@@ -118,4 +175,5 @@ void LicenseDispatchTest() {
     UpdateChecksAloneDoNotDeferUiRecheck();
     UiRecheckDefersWhileLicenseWorkPendingUpToTimeout();
     RemoveAppCancelsPendingAddAndDefersUiRecheck();
+    UnappliedRefreshRetriesWithinBudgetAndRechecksOnlyWhenApplied();
 }

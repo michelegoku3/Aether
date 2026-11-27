@@ -525,6 +525,9 @@ bool h_ProcessPendingLicenseUpdates(void* cUser) {
         LicenseManager::SteamLicenseCallScope guard;
         result = o_ProcessPendingLicenseUpdates(cUser);
     }
+    if (result) {
+        LicenseManager::OnSteamLicenseUpdatesApplied();
+    }
     LicenseManager::TryDrainOnSteamThread();
     return result;
 }

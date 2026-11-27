@@ -77,6 +77,10 @@ bool ShouldDeferUiRecheck(std::uint64_t nowMs);
 // package 0 was already seeded while CUser was null, and wakes the monitor.
 void OnUserCaptured();
 
+// Called after Steam's own ProcessPendingLicenseUpdates returns true so any
+// previously unapplied Aether mutation triggers a post-rebuild UI recheck.
+void OnSteamLicenseUpdatesApplied();
+
 // Wakes the startup monitor immediately when CPackageInfo/CUser is captured.
 void WakeStartupRetry();
 
