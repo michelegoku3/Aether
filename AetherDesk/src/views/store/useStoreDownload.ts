@@ -7,7 +7,7 @@ import type { StoreGameResult } from '../../hooks/useStoreSearch';
 import type { LuaManifestRow } from '../../modals/SpecificVersionModal';
 import { emptyStatus, type StatusMessage } from '../../types/ui';
 
-export type StoreDownloadSource = 'hubcap' | 'luatools' | 'ryuu';
+export type StoreDownloadSource = 'hubcap' | 'luatools' | 'ryuu' | 'depotbox';
 
 interface Params {
   onRefreshUsage?: (forcedKey?: string) => Promise<void>;
@@ -19,7 +19,13 @@ interface ProviderRequest {
 }
 
 const apiKeyFor = (source: StoreDownloadSource, settings: AppSettings) =>
-  source === 'hubcap' ? settings.hubcap_api_key : source === 'ryuu' ? settings.ryuu_api_key : '';
+  source === 'hubcap'
+    ? settings.hubcap_api_key
+    : source === 'ryuu'
+      ? settings.ryuu_api_key
+      : source === 'depotbox'
+        ? settings.depotbox_api_key
+        : '';
 
 export function useStoreDownload({ onRefreshUsage }: Params) {
   const { loadInstalledGames } = useLibraryGames();
@@ -53,6 +59,7 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
       const luaToolsSignedIn = authResult.status === 'fulfilled' && authResult.value.signedIn;
       if (settings.hubcap_api_key?.trim()) setSource('hubcap');
       else if (luaToolsSignedIn) setSource('luatools');
+      else if (settings.depotbox_api_key?.trim()) setSource('depotbox');
       else if (settings.ryuu_api_key?.trim()) setSource('ryuu');
       else setSource('hubcap');
     } catch {
@@ -75,6 +82,10 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
       setStatus({ text: 'Error: Please enter your Ryuu API Key in Settings first!', type: 'error' });
       return null;
     }
+    if (source === 'depotbox' && (!apiKey || apiKey.trim() === '')) {
+      setStatus({ text: 'Error: Please enter your DepotBox API Key in Settings first!', type: 'error' });
+      return null;
+    }
     if (!settings.steam_path?.trim()) {
       setStatus({ text: 'Error: Please specify the Steam path in Settings first!', type: 'error' });
       return null;
@@ -86,12 +97,16 @@ export function useStoreDownload({ onRefreshUsage }: Params) {
           ? 'trigger_luatools_download'
           : source === 'ryuu'
             ? 'trigger_ryuu_download'
-            : 'trigger_hubcap_download'
+            : source === 'depotbox'
+              ? 'trigger_depotbox_download'
+              : 'trigger_hubcap_download'
         : source === 'luatools'
           ? 'prepare_luatools_specific_version_download'
           : source === 'ryuu'
             ? 'prepare_ryuu_specific_version_download'
-            : 'prepare_specific_version_download';
+            : source === 'depotbox'
+              ? 'prepare_depotbox_specific_version_download'
+              : 'prepare_specific_version_download';
     const args =
       source === 'luatools'
         ? { appId: Number(game.appId), gameName: game.name || null }

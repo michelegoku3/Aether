@@ -74,6 +74,26 @@ pub async fn prepare_specific_version_download(
 }
 
 #[tauri::command]
+pub async fn trigger_depotbox_download(
+    app: tauri::AppHandle,
+    app_id: u32,
+    api_key: String,
+) -> Result<String, String> {
+    let request = authenticated_request(&app, app_id, api_key)?;
+    store::trigger_depotbox_download(&app, request).await
+}
+
+#[tauri::command]
+pub async fn prepare_depotbox_specific_version_download(
+    app: tauri::AppHandle,
+    app_id: u32,
+    api_key: String,
+) -> Result<Vec<LuaManifestRow>, String> {
+    let request = authenticated_request(&app, app_id, api_key)?;
+    store::prepare_depotbox_specific_version_download(&app, request).await
+}
+
+#[tauri::command]
 pub async fn trigger_ryuu_download(
     app: tauri::AppHandle,
     app_id: u32,

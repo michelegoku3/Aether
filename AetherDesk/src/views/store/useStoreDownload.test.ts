@@ -21,13 +21,14 @@ const game: StoreGameResult = {
 const configuredSettings = {
   hubcap_api_key: 'hubcap-key',
   ryuu_api_key: 'ryuu-key',
+  depotbox_api_key: 'depotbox-key',
   steam_path: 'C:/Steam',
 };
 
 describe('useStoreDownload', () => {
   beforeEach(() => loadInstalledGames.mockReset());
 
-  it('selects providers in Hubcap, LuaTools, Ryuu priority order', async () => {
+  it('selects providers in Hubcap, LuaTools, DepotBox, Ryuu priority order', async () => {
     mockInvokeCommands({
       get_settings: configuredSettings,
       get_luatools_auth_status: { signedIn: true },
@@ -39,7 +40,7 @@ describe('useStoreDownload', () => {
 
     invokeMock.mockReset();
     mockInvokeCommands({
-      get_settings: { ...configuredSettings, hubcap_api_key: '' },
+      get_settings: { ...configuredSettings, hubcap_api_key: '', depotbox_api_key: '' },
       get_luatools_auth_status: { signedIn: true },
     });
     await act(() => result.current.openDownload(game));
@@ -48,6 +49,14 @@ describe('useStoreDownload', () => {
     invokeMock.mockReset();
     mockInvokeCommands({
       get_settings: { ...configuredSettings, hubcap_api_key: '' },
+      get_luatools_auth_status: { signedIn: false },
+    });
+    await act(() => result.current.openDownload(game));
+    expect(result.current.source).toBe('depotbox');
+
+    invokeMock.mockReset();
+    mockInvokeCommands({
+      get_settings: { ...configuredSettings, hubcap_api_key: '', depotbox_api_key: '' },
       get_luatools_auth_status: { signedIn: false },
     });
     await act(() => result.current.openDownload(game));
@@ -66,7 +75,12 @@ describe('useStoreDownload', () => {
 
   it('blocks Hubcap download when its key is missing', async () => {
     mockInvokeCommands({
-      get_settings: { ...configuredSettings, hubcap_api_key: '', ryuu_api_key: '' },
+      get_settings: {
+        ...configuredSettings,
+        hubcap_api_key: '',
+        ryuu_api_key: '',
+        depotbox_api_key: '',
+      },
       get_luatools_auth_status: { signedIn: false },
     });
     const { result } = renderHook(() => useStoreDownload({}));
@@ -104,6 +118,32 @@ describe('useStoreDownload', () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(result.current.selectedGame).toBeNull();
+  });
+
+  it('downloads and prepares versions through the DepotBox commands', async () => {
+    mockInvokeCommands({
+      get_settings: { ...configuredSettings, hubcap_api_key: '' },
+      get_luatools_auth_status: { signedIn: false },
+      trigger_depotbox_download: 'DepotBox installed',
+      prepare_depotbox_specific_version_download: [],
+    });
+    const { result } = renderHook(() => useStoreDownload({}));
+    await act(() => result.current.openDownload(game));
+    expect(result.current.source).toBe('depotbox');
+
+    await act(() => result.current.downloadSpecific());
+    expect(invokeMock).toHaveBeenCalledWith('prepare_depotbox_specific_version_download', {
+      appId: 10,
+      apiKey: 'depotbox-key',
+    });
+
+    await act(() => result.current.closeVersion());
+    await act(() => result.current.openDownload(game));
+    await act(() => result.current.downloadLatest());
+    expect(invokeMock).toHaveBeenCalledWith('trigger_depotbox_download', {
+      appId: 10,
+      apiKey: 'depotbox-key',
+    });
   });
 
   it('uses LuaTools gameName payload and opens the version editor', async () => {

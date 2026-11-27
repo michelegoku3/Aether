@@ -5,6 +5,7 @@
 //! LuaTools, it does not clear partial Steam downloads before publishing.
 
 use super::installation::{install_specific_package, SpecificInstallPolicy};
+use super::latest_download::{acquire_depotbox_package, complete_depotbox_package};
 use super::model::{AuthenticatedDownloadRequest, LuaToolsDownloadRequest};
 use super::package_completion::{complete_specific_package, download_complete_luatools_package};
 use super::validation::{validate_authenticated_download, validate_steam_download_path};
@@ -128,6 +129,74 @@ pub async fn prepare_ryuu_specific_version_download(
         installed_rows.len()
     );
     Ok(installed_rows)
+}
+
+pub async fn prepare_depotbox_specific_version_download(
+    app: &tauri::AppHandle,
+    request: AuthenticatedDownloadRequest,
+) -> Result<Vec<LuaManifestRow>, String> {
+    let app_id = request.download.app_id;
+    let steam_path = request.download.steam_path;
+    let api_key = request.api_key;
+    if let Err(error) = validate_authenticated_download(
+        &api_key,
+        &steam_path,
+        "download the Lua file from DepotBox",
+    ) {
+        crate::desk_log_error!(
+            "store",
+            "DepotBox specific version download failed for {}: {}",
+            crate::core::logger::format_appid(app_id),
+            error
+        );
+        return Err(error);
+    }
+    crate::desk_log_info!(
+        "store",
+        "Preparing DepotBox specific version download for {}",
+        crate::core::logger::format_appid(app_id)
+    );
+
+    let result = async {
+        let (_job_guard, mut package) = acquire_depotbox_package(app_id, &api_key).await?;
+        let manifest_rows = LuaManifestPins::rows_from_content(&package.lua_content);
+        if manifest_rows.is_empty() {
+            return Err("The downloaded Lua from DepotBox does not contain any setManifestid entries, so it was not installed. Try another source or verify the provider returned the full Lua with manifests.".to_string());
+        }
+        complete_depotbox_package(app, app_id, &steam_path, &mut package).await?;
+        let plan = MutationPlan::prepare(
+            std::path::Path::new(&steam_path),
+            app_id,
+            "prepare_depotbox_specific_version_download",
+        )?;
+        install_specific_package(
+            app,
+            app_id,
+            &steam_path,
+            package,
+            "DepotBox",
+            plan,
+            SpecificInstallPolicy::default(),
+        )
+        .await
+    }
+    .await;
+
+    match &result {
+        Ok(rows) => crate::desk_log_info!(
+            "store",
+            "Successfully prepared DepotBox specific version download for {}: {} row(s) installed",
+            crate::core::logger::format_appid(app_id),
+            rows.len()
+        ),
+        Err(error) => crate::desk_log_error!(
+            "store",
+            "DepotBox specific version download failed for {}: {}",
+            crate::core::logger::format_appid(app_id),
+            error
+        ),
+    }
+    result
 }
 
 pub async fn prepare_luatools_specific_version_download(

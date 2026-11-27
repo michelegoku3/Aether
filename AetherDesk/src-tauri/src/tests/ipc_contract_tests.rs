@@ -859,7 +859,12 @@ fn documented_command_contracts_have_the_expected_keys() {
         ("apply_specific_version_edits", &["appId", "edits"]),
         ("apply_game_version", &["appId", "buildId"]),
         ("trigger_hubcap_download", &["appId", "apiKey"]),
+        ("trigger_depotbox_download", &["appId", "apiKey"]),
         ("prepare_specific_version_download", &["appId", "apiKey"]),
+        (
+            "prepare_depotbox_specific_version_download",
+            &["appId", "apiKey"],
+        ),
         ("trigger_ryuu_download", &["appId", "apiKey"]),
         (
             "prepare_ryuu_specific_version_download",

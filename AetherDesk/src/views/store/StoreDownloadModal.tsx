@@ -62,6 +62,13 @@ export function StoreDownloadModal({
               </button>
               <button
                 disabled={isDownloading}
+                onClick={() => onSourceChange('depotbox')}
+                className={`source-btn ${source === 'depotbox' ? 'active' : ''}`}
+              >
+                DepotBox
+              </button>
+              <button
+                disabled={isDownloading}
                 onClick={() => onSourceChange('ryuu')}
                 className={`source-btn ${source === 'ryuu' ? 'active' : ''}`}
               >
