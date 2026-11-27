@@ -73,17 +73,34 @@ bool IsValveFamilyLicense(AppId appId) {
                                              settings->libraryOwnerBannerApps, settings->libraryOwnerBannerSteamId);
 }
 
+// Collects any active Valve family-shared root ids so package-0 seeds and
+// hot-reloads keep them out of both appIdVec and depotIdVec without dropping
+// distinct companion DLC or depot ids.
+std::vector<AppId> FilterFamilyIdsOut(const std::vector<AppId>& ids, const char* context) {
+    std::vector<AppId> excluded;
+    for (const AppId id : ids) {
+        if (id != 0 && IsValveFamilyLicense(id))
+            excluded.push_back(id);
+    }
+    if (excluded.empty())
+        return policy::NormalizeSeed(ids);
+    const std::vector<AppId> filtered = policy::ExcludeIds(ids, excluded);
+    AC_LOG_INFO(kModule, "Package-0 %s: skipped %zu active family-shared root id(s) (%zu kept).",
+                context ? context : "seed", ids.size() - filtered.size(), filtered.size());
+    return filtered;
+}
+
 // The ids this session may seed into package 0: everything the .lua files
 // configure, minus the apps Valve licenses to another account.
-std::vector<AppId> SeedableIds() {
-    std::vector<AppId> ids = luadata::SeedPackage0Ids();
-    const auto firstSkipped = std::remove_if(ids.begin(), ids.end(), [](AppId id) { return IsValveFamilyLicense(id); });
-    if (firstSkipped != ids.end()) {
-        AC_LOG_INFO(kModule, "Package-0 seed: %zu app id(s) skipped, Valve licenses them to another account.",
-                    static_cast<std::size_t>(ids.end() - firstSkipped));
-        ids.erase(firstSkipped, ids.end());
+std::vector<AppId> SeedableIds() { return FilterFamilyIdsOut(luadata::SeedPackage0Ids(), "seed"); }
+
+std::vector<AppId> ActiveFamilyRootIds() {
+    std::vector<AppId> familyRoots;
+    for (const AppId root : luadata::LibraryAppIds()) {
+        if (root != 0 && IsValveFamilyLicense(root))
+            familyRoots.push_back(root);
     }
-    return ids;
+    return familyRoots;
 }
 
 // steamclient!CUtlMemory grow helper used to extend package 0's app-id vector.
@@ -106,25 +123,8 @@ bool RemoveAllFromPackage0(PackageInfo* pkg, steam::CUtlVector<AppId>& vec, cons
                            std::size_t& removed) {
     if (!pkg || !vec.mem.memory || ids.empty())
         return true;
-    std::unordered_set<AppId> removeSet;
-    removeSet.reserve(ids.size());
-    for (AppId id : ids) {
-        if (id != 0)
-            removeSet.insert(id);
-    }
-
-    AppId* data = vec.mem.memory;
-    std::uint32_t write = 0;
-    for (std::uint32_t read = 0; read < vec.size; ++read) {
-        if (removeSet.count(data[read])) {
-            ++removed;
-            continue;
-        }
-        if (write != read)
-            data[write] = data[read];
-        ++write;
-    }
-    vec.size = write;
+    const auto removeSet = policy::BuildNonZeroSet(ids);
+    removed += policy::PruneInPlace(vec.mem.memory, vec.size, removeSet);
     return true;
 }
 
@@ -299,9 +299,9 @@ bool AddAppToPackage0OnSteamThread(AppId appId) {
         return false;
     }
 
-    const std::vector<AppId> ids = luadata::IdsForApp(appId);
+    const std::vector<AppId> ids = FilterFamilyIdsOut(luadata::IdsForApp(appId), "ondemand");
     if (ids.empty()) {
-        AC_LOG_DEBUG(kModule, "AddAppToPackage0(%u): no lua ids.", appId);
+        AC_LOG_DEBUG(kModule, "AddAppToPackage0(%u): no non-family lua ids.", appId);
         return false;
     }
     const PackageSeedResult result = SeedPackageVectors(pkg, ids, "ondemand", false);
@@ -330,19 +330,27 @@ void RemoveAppsFromPackage0OnSteamThread(const std::vector<AppId>& requestedRemo
         return;
     }
 
-    // Only strip root app entries so any companion DLCs/depots configured for
-    // the borrowed base app stay intact in package 0.
-    std::size_t removed = 0;
-    RemoveAllFromPackage0(pkg, pkg->appIdVec, candidates, removed);
-    if (removed == 0)
+    // Strip the borrowed root app id from BOTH appIdVec and depotIdVec:
+    // CUser::RebuildLicensesCache indexes appToLicenses from both vectors, so
+    // leaving a root app id in depotIdVec re-attaches package 0 on the next
+    // rebuild. Companion DLC/depot ids (!= root app id) stay intact in both.
+    std::size_t removedApps = 0;
+    std::size_t removedDepots = 0;
+    RemoveAllFromPackage0(pkg, pkg->appIdVec, candidates, removedApps);
+    RemoveAllFromPackage0(pkg, pkg->depotIdVec, candidates, removedDepots);
+    if (removedApps == 0 && removedDepots == 0)
         return;
 
     const std::uint32_t total = pkg->appIdVec.size;
     g_state.package0AppCount.store(static_cast<std::size_t>(total), std::memory_order_relaxed);
     didMutate = true;
     needRefresh = true;
-    AC_LOG_INFO(kModule, "Package 0 pruned %zu real family-shared app entry(s) (total %u).", removed, total);
-    diag::Record("license_refresh", "family-prune -" + std::to_string(removed));
+    AC_LOG_INFO(kModule,
+                "Package 0 pruned real family-shared app id(s) (removed_apps=%zu, removed_depots=%zu, "
+                "app_vec_total=%u, depot_vec_total=%u).",
+                removedApps, removedDepots, total, pkg->depotIdVec.size);
+    diag::Record("license_refresh",
+                 "family-prune -" + std::to_string(removedApps) + "/d-" + std::to_string(removedDepots));
 }
 
 void ApplyHotReloadOnSteamThread(bool& didMutate, bool& needRefresh) {
@@ -357,17 +365,20 @@ void ApplyHotReloadOnSteamThread(bool& didMutate, bool& needRefresh) {
 
     const std::vector<AppId> removals = luadata::TakePendingRemovals();
     const std::vector<AppId> additions = luadata::TakePendingAdditions();
-    if (removals.empty() && additions.empty()) {
+    std::vector<AppId> pruneIds = removals;
+    const std::vector<AppId> familyRoots = ActiveFamilyRootIds();
+    pruneIds.insert(pruneIds.end(), familyRoots.begin(), familyRoots.end());
+    if (pruneIds.empty() && additions.empty()) {
         AC_LOG_DEBUG(kModule, "NotifyLicenseChanged drain: no pending changes; skipping.");
         return;
     }
 
     std::size_t removed = 0;
-    RemoveAllFromPackage0(pkg, pkg->appIdVec, removals, removed);
+    RemoveAllFromPackage0(pkg, pkg->appIdVec, pruneIds, removed);
     std::size_t removedDepots = 0;
-    RemoveAllFromPackage0(pkg, pkg->depotIdVec, removals, removedDepots);
+    RemoveAllFromPackage0(pkg, pkg->depotIdVec, pruneIds, removedDepots);
     if (removedDepots != 0)
-        AC_LOG_DEBUG(kModule, "Removed %zu depot license(s) from package 0.", removedDepots);
+        AC_LOG_DEBUG(kModule, "Removed %zu depot/family-root entry(s) from package 0 depotIdVec.", removedDepots);
 
     const PackageSeedResult result = SeedPackageVectors(pkg, SeedableIds(), "hotreload", true);
     if (!result.apps.complete)
@@ -377,7 +388,8 @@ void ApplyHotReloadOnSteamThread(bool& didMutate, bool& needRefresh) {
     g_state.package0AppCount.store(static_cast<std::size_t>(total), std::memory_order_relaxed);
     didMutate = true;
     needRefresh = true;
-    AC_LOG_INFO(kModule, "Package 0 hot-reload applied (+%zu -%zu, total %u).", additions.size(), removed, total);
+    AC_LOG_INFO(kModule, "Package 0 hot-reload applied (+%zu -%zu/d-%zu, total %u).", additions.size(), removed,
+                removedDepots, total);
     diag::Record("license_refresh", "+" + std::to_string(additions.size()) + " -" + std::to_string(removed));
 }
 

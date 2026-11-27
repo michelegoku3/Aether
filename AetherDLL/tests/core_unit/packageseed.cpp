@@ -72,6 +72,32 @@ void PublishTracksRefreshCompletion() {
     CHECK(DecidePublishStep(true, false, false) == PublishStep::Published);
 }
 
+void PrunesFamilyRootFromBothVectorsKeepingDlcs() {
+    // Package 0 carries both appIdVec and depotIdVec; Steam's
+    // RebuildLicensesCache reads BOTH vectors into appToLicenses. Stripping a
+    // borrowed root (2868840) must remove every copy from both vectors while
+    // keeping companion DLC/depot ids (2868841, 2868850) and Steam's own ids.
+    const std::vector<AppId> apps{7, 2868840, 2868850, 999999};
+    const std::vector<AppId> depots{2868840, 2868841, 2868850, 777};
+    const auto out = ac::hooks::license::policy::PrunePackageVectors(apps, depots, {2868840});
+    CHECK(out.Changed());
+    CHECK_EQ(out.apps.removed, 1u);
+    CHECK_EQ(out.depots.removed, 1u);
+    CHECK(out.apps.ids == (std::vector<AppId>{7, 2868850, 999999}));
+    CHECK(out.depots.ids == (std::vector<AppId>{2868841, 2868850, 777}));
+
+    // Re-pruning after removal is a no-op so callers do not spam license refreshes.
+    const auto second = ac::hooks::license::policy::PrunePackageVectors(out.apps.ids, out.depots.ids, {2868840});
+    CHECK(!second.Changed());
+}
+
+void ExcludeIdsDropsFamilyRootFromMixedDlcSeed() {
+    // When a DLC lookup pulls in every id from a shared .lua file, excluding
+    // the borrowed base app leaves all DLC/content depot ids intact.
+    const auto filtered = ac::hooks::license::policy::ExcludeIds({0, 2868840, 2868841, 2868850, 2868840}, {2868840});
+    CHECK(filtered == (std::vector<AppId>{2868841, 2868850}));
+}
+
 } // namespace
 
 void PackageSeedTest() {
@@ -83,4 +109,6 @@ void PackageSeedTest() {
     ApplyingTwiceChangesNothing();
     NormalizeDropsZeroAndRepeats();
     PublishTracksRefreshCompletion();
+    PrunesFamilyRootFromBothVectorsKeepingDlcs();
+    ExcludeIdsDropsFamilyRootFromMixedDlcSeed();
 }
