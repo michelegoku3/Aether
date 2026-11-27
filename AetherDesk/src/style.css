@@ -4964,8 +4964,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 11px 0;
-  margin-bottom: -8px;
+  padding: 14px 19px;
+  margin: 0 -19px -19px -19px;
   border-top: 1px solid var(--border-subtle);
 }
 
