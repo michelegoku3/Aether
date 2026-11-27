@@ -45,6 +45,7 @@ them.
 | **Quota** | Shared daily generation budget (1500 game + 500 workshop), reset at EST midnight and enforced by a locked state file. |
 | **LuaTools** | Account-based source that returns a package: a Lua plus, when available, its manifests. |
 | **Ryuu** | Additional package source. |
+| **DepotBox** | Package source at `depotbox.lol`: the build runs as a remote job (start, poll, then fetch the ZIP). Not the `depotbox.org` build-details source used by version switching. |
 | **Package** | A provider response containing a Lua and optionally its `.manifest` files. |
 | **Local import** | Installing a game from local archives or folders instead of a provider. |
 
