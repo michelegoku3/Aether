@@ -109,6 +109,20 @@ std::vector<AppId> FilterFamilyIdsOut(const std::vector<AppId>& ids, const char*
 // configure, minus the apps Valve licenses to another account.
 std::vector<AppId> SeedableIds() { return FilterFamilyIdsOut(luadata::SeedPackage0Ids(), "seed"); }
 
+std::string FormatAppIdsBrief(const std::vector<AppId>& ids) {
+    std::string out;
+    constexpr std::size_t kMaxShown = 6;
+    const std::size_t shown = (std::min)(ids.size(), kMaxShown);
+    for (std::size_t i = 0; i < shown; ++i) {
+        if (i > 0)
+            out += ", ";
+        out += std::to_string(ids[i]);
+    }
+    if (ids.size() > kMaxShown)
+        out += " (+" + std::to_string(ids.size() - kMaxShown) + " more)";
+    return out;
+}
+
 std::vector<AppId> ActiveFamilyRootIds() {
     std::vector<AppId> familyRoots;
     for (const AppId root : luadata::LibraryAppIds()) {
@@ -322,8 +336,12 @@ bool RefreshLicensesOnSteamThread(const char* reason) {
 }
 
 bool AddAppToPackage0OnSteamThread(AppId appId) {
-    if (appId == 0 || IsValveFamilyLicense(appId))
+    if (appId == 0)
         return false;
+    if (IsValveFamilyLicense(appId)) {
+        AC_LOG_DEBUG(kModule, "AddAppToPackage0(%u): skipped, active family-shared license.", appId);
+        return false;
+    }
 
     auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load(std::memory_order_acquire));
     if (!pkg && g_state.pCPackageInfo.load(std::memory_order_acquire) != nullptr) {
@@ -357,8 +375,12 @@ void RemoveAppsFromPackage0OnSteamThread(const std::vector<AppId>& requestedRemo
         const bool isValveFamily = IsValveFamilyLicense(id);
         const bool isSpoofed = luadata::IsSpoofed(id);
         const bool isOwnBanner = (!isValveFamily && !isSpoofed) ? IsOwnBannerRoot(id) : false;
-        if (policy::ShouldPruneRequestedApp(isValveFamily, isSpoofed, isOwnBanner))
+        if (policy::ShouldPruneRequestedApp(isValveFamily, isSpoofed, isOwnBanner)) {
             candidates.push_back(id);
+        } else {
+            AC_LOG_DEBUG(kModule, "Package 0 prune skipped app %u (spoofed=%d, own_banner=%d).", id, isSpoofed ? 1 : 0,
+                         isOwnBanner ? 1 : 0);
+        }
     }
     if (candidates.empty())
         return;
@@ -371,18 +393,18 @@ void RemoveAppsFromPackage0OnSteamThread(const std::vector<AppId>& requestedRemo
         return;
     }
 
-    // Strip the borrowed root app id from BOTH appIdVec and depotIdVec:
+    // Strip the root app id from BOTH appIdVec and depotIdVec:
     // CUser::RebuildLicensesCache indexes appToLicenses from both vectors, so
     // leaving a root app id in depotIdVec re-attaches package 0 on the next
     // rebuild. Companion DLC/depot ids (!= root app id) stay intact in both.
+    const std::string candidateList = FormatAppIdsBrief(candidates);
     std::size_t removedApps = 0;
     std::size_t removedDepots = 0;
     RemoveAllFromPackage0(pkg, pkg->appIdVec, candidates, removedApps);
     RemoveAllFromPackage0(pkg, pkg->depotIdVec, candidates, removedDepots);
     if (removedApps == 0 && removedDepots == 0) {
-        AC_LOG_DEBUG(kModule,
-                     "Package 0 prune for %zu app(s): already absent from appIdVec/depotIdVec (rebuild_pending=%d).",
-                     candidates.size(), g_state.licenseRebuildPending.load(std::memory_order_acquire) ? 1 : 0);
+        AC_LOG_DEBUG(kModule, "Package 0 prune for [%s]: already absent from appIdVec/depotIdVec (rebuild_pending=%d).",
+                     candidateList.c_str(), g_state.licenseRebuildPending.load(std::memory_order_acquire) ? 1 : 0);
         return;
     }
 
@@ -391,9 +413,9 @@ void RemoveAppsFromPackage0OnSteamThread(const std::vector<AppId>& requestedRemo
     didMutate = true;
     needRefresh = true;
     AC_LOG_INFO(kModule,
-                "Package 0 pruned real family-shared app id(s) (removed_apps=%zu, removed_depots=%zu, "
+                "Package 0 pruned root app(s) [%s] (removed_apps=%zu, removed_depots=%zu, "
                 "app_vec_total=%u, depot_vec_total=%u).",
-                removedApps, removedDepots, total, pkg->depotIdVec.size);
+                candidateList.c_str(), removedApps, removedDepots, total, pkg->depotIdVec.size);
     diag::Record("license_refresh",
                  "family-prune -" + std::to_string(removedApps) + "/d-" + std::to_string(removedDepots));
 }
@@ -433,8 +455,8 @@ void ApplyHotReloadOnSteamThread(bool& didMutate, bool& needRefresh) {
     g_state.package0AppCount.store(static_cast<std::size_t>(total), std::memory_order_relaxed);
     didMutate = true;
     needRefresh = true;
-    AC_LOG_INFO(kModule, "Package 0 hot-reload applied (+%zu -%zu/d-%zu, total %u).", additions.size(), removed,
-                removedDepots, total);
+    AC_LOG_INFO(kModule, "Package 0 hot-reload applied (+%zu -%zu/d-%zu, family_roots=%zu, total %u).",
+                additions.size(), removed, removedDepots, familyRoots.size(), total);
     diag::Record("license_refresh", "+" + std::to_string(additions.size()) + " -" + std::to_string(removed));
 }
 
@@ -715,7 +737,14 @@ void TryDrainOnSteamThread() {
     bool publishAttempted = false;
     bool publishSeedChanged = false;
     bool needRefresh = batch.refresh;
-    const char* refreshReason = batch.hotReload ? "hotreload" : (batch.acquirePackage0 ? "publish" : "ondemand");
+    const char* refreshReason =
+        batch.hotReload ? "hotreload"
+                        : (batch.acquirePackage0
+                               ? "publish"
+                               : (!batch.removeApps.empty() && batch.apps.empty()
+                                      ? "family-prune"
+                                      : (retryQueued && batch.apps.empty() && batch.removeApps.empty() ? "pending-retry"
+                                                                                                       : "ondemand")));
 
     if (batch.acquirePackage0) {
         auto* pkg = static_cast<PackageInfo*>(g_state.pPackage0.load(std::memory_order_acquire));

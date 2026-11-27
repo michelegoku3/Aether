@@ -444,8 +444,9 @@ bool CheckAppOwnershipImpl(void* self, AppId app, AppOwnership* out) {
                         app, out->packageId, out->existInPackageNums, out->freeLicense ? 1 : 0, out->steamId32);
             LicenseManager::RequestRemoveAppFromPackage0(app);
         } else {
-            AC_LOG_INFO(kModule, "CheckAppOwnership: app %u classified as owned (pkg=%u, exist=%u, free=%d).", app,
-                        out->packageId, out->existInPackageNums, out->freeLicense ? 1 : 0);
+            AC_LOG_INFO(kModule,
+                        "CheckAppOwnership: app %u classified as owned (pkg=%u, exist=%u, free=%d, raw_steamId32=%u).",
+                        app, out->packageId, out->existInPackageNums, out->freeLicense ? 1 : 0, out->steamId32);
             luadata::MarkOwned(app);
             LicenseManager::RequestRemoveAppFromPackage0(app);
             RecordOwnershipOutcome(app, OwnershipOutcome::LegitOwned);
@@ -527,6 +528,8 @@ bool h_ProcessPendingLicenseUpdates(void* cUser) {
     }
     if (result) {
         LicenseManager::OnSteamLicenseUpdatesApplied();
+    } else if (g_state.licenseRebuildPending.load(std::memory_order_acquire)) {
+        AC_LOG_DEBUG_ONCE(kModule, "ProcessPendingLicenseUpdates returned 0 while Aether license rebuild pending.");
     }
     LicenseManager::TryDrainOnSteamThread();
     return result;
