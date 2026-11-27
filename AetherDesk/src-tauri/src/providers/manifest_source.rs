@@ -2,6 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::manifest::package::ManifestPackage;
+use crate::providers::depotbox::DepotBoxClient;
 use crate::providers::hubcap::HubcapClient;
 use crate::providers::luatools::LuaToolsClient;
 use crate::providers::ryuu::RyuuClient;
@@ -43,6 +44,22 @@ impl ManifestSource for HubcapClient {
     }
 
     fn download_package<'a>(&'a self, app_id: u32) -> SourceBoxFuture<'a, ManifestPackage> {
+        Box::pin(async move { self.download_lua_package(app_id).await })
+    }
+}
+
+impl ManifestSource for DepotBoxClient {
+    fn source_id(&self) -> &'static str {
+        "depotbox"
+    }
+
+    fn display_name(&self) -> &'static str {
+        "DepotBox"
+    }
+
+    fn download_package<'a>(&'a self, app_id: u32) -> SourceBoxFuture<'a, ManifestPackage> {
+        // Concurrency gating belongs to the caller: a remote job can run for
+        // minutes, so the acquisition lane is released after the job starts.
         Box::pin(async move { self.download_lua_package(app_id).await })
     }
 }

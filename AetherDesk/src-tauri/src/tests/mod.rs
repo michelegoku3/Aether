@@ -24,6 +24,7 @@ pub mod backup_original_tests;
 pub mod bridge_contract_tests;
 pub mod crack_locate_tests;
 pub mod custom_css_tests;
+pub mod depotbox_provider_tests;
 pub mod desk_error_tests;
 pub mod dll_install_tests;
 pub mod dll_version_tests;

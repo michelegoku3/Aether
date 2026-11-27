@@ -1,3 +1,4 @@
+pub mod depotbox;
 pub mod health;
 pub mod http;
 pub mod hubcap;
