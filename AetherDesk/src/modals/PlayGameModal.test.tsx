@@ -1,9 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { invokeMock } from '../test/tauriMocks';
 import { PlayGameModal } from './PlayGameModal';
-import type { RamProcessEntry } from '../types/play';
+import type { RamPreview, RamProcessEntry } from '../types/play';
 
 const entry = (overrides: Partial<RamProcessEntry>): RamProcessEntry => ({
   pid: 100,
@@ -16,14 +16,27 @@ const entry = (overrides: Partial<RamProcessEntry>): RamProcessEntry => ({
   ...overrides,
 });
 
+const preview = (entries: RamProcessEntry[]): RamPreview => ({
+  entries,
+  memory: {
+    totalKb: 16 * 1024 * 1024,
+    usedKb: 10 * 1024 * 1024,
+    availableKb: 6 * 1024 * 1024,
+  },
+});
+
 describe('PlayGameModal', () => {
-  it('displays candidate memory in MB without dividing by 1024 twice', async () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('displays system RAM overview and candidate memory in MB without dividing by 1024 twice', async () => {
     invokeMock.mockImplementation(async (command: string) => {
       if (command === 'preview_ram_optimizer') {
-        return [
+        return preview([
           entry({ pid: 101, name: 'chrome.exe', memoryKb: 200 * 1024 }),
           entry({ pid: 102, name: 'steam.exe', memoryKb: 300 * 1024, verdict: 'keep', reason: 'Steam' }),
-        ];
+        ]);
       }
       return null;
     });
@@ -31,13 +44,14 @@ describe('PlayGameModal', () => {
     render(<PlayGameModal game={{ appId: '730', name: 'Counter-Strike 2', installed: true }} onClose={() => {}} />);
 
     expect(await screen.findByText(/200 MB · PID 101/)).toBeInTheDocument();
-    expect(screen.getAllByText(/200 MB/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/16\.0 GB used/)).toBeInTheDocument();
+    expect(screen.getByText(/\+200 MB reclaimable/)).toBeInTheDocument();
   });
 
   it('allows Play Directly even when there are no close candidates', async () => {
     const user = userEvent.setup();
     invokeMock.mockImplementation(async (command: string) => {
-      if (command === 'preview_ram_optimizer') return [];
+      if (command === 'preview_ram_optimizer') return preview([]);
       if (command === 'optimize_and_launch_game') {
         return {
           launched: true,
@@ -67,24 +81,26 @@ describe('PlayGameModal', () => {
     expect(await screen.findByText(/Launched directly without closing background applications/)).toBeInTheDocument();
   });
 
-  it('lets the user exclude specific processes before optimizing', async () => {
+  it('groups multi-process apps, persists kept apps, and summarizes duplicate closed names', async () => {
     const user = userEvent.setup();
     invokeMock.mockImplementation(async (command: string) => {
       if (command === 'preview_ram_optimizer') {
-        return [
+        return preview([
           entry({ pid: 101, name: 'chrome.exe', memoryKb: 200 * 1024 }),
+          entry({ pid: 102, name: 'chrome.exe', memoryKb: 250 * 1024 }),
           entry({ pid: 202, name: 'slack.exe', memoryKb: 150 * 1024 }),
-        ];
+          entry({ pid: 203, name: 'slack.exe', memoryKb: 150 * 1024 }),
+        ]);
       }
       if (command === 'optimize_and_launch_game') {
         return {
           launched: true,
           message: 'Launched Steam app 730.',
           report: {
-            closed: ['slack.exe'],
+            closed: ['slack.exe', 'slack.exe'],
             failed: [],
             kept: ['chrome.exe (excluded by user)'],
-            reclaimedKb: 150 * 1024,
+            reclaimedKb: 300 * 1024,
             gone: [],
           },
         };
@@ -95,10 +111,12 @@ describe('PlayGameModal', () => {
     render(<PlayGameModal game={{ appId: '730', name: 'Counter-Strike 2', installed: true }} onClose={() => {}} />);
 
     const chromeCheckbox = await screen.findByRole('checkbox', { name: /chrome\.exe/i });
-    expect(screen.getByText(/350 MB/)).toBeInTheDocument();
+    expect(screen.getByText('450 MB')).toBeInTheDocument();
+    expect(screen.getByText(/\+750 MB reclaimable/)).toBeInTheDocument();
 
     await user.click(chromeCheckbox);
-    expect(screen.getByText(/150 MB · PID 202/)).toBeInTheDocument();
+    expect(localStorage.getItem('aether.play_keep_apps')).toBe('["chrome.exe"]');
+    expect(screen.getByText(/\+300 MB reclaimable/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Optimize & Play' }));
 
@@ -107,8 +125,26 @@ describe('PlayGameModal', () => {
         appId: 730,
         minMemoryMb: 150,
         skipOptimize: false,
-        excludePids: [101],
+        excludePids: [101, 102],
       })
     );
+    expect(await screen.findByText('×2')).toBeInTheDocument();
+  });
+
+  it('re-scans preview when the Min RAM threshold changes', async () => {
+    const user = userEvent.setup();
+    invokeMock.mockResolvedValue(preview([entry({ pid: 101, name: 'chrome.exe', memoryKb: 300 * 1024 })]));
+
+    render(<PlayGameModal game={{ appId: '730', name: 'Counter-Strike 2', installed: true }} onClose={() => {}} />);
+
+    const select = await screen.findByLabelText(/Min RAM:/i);
+    await user.selectOptions(select, '250');
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith('preview_ram_optimizer', {
+        minMemoryMb: 250,
+      })
+    );
+    expect(localStorage.getItem('aether.play_min_mb')).toBe('250');
   });
 });

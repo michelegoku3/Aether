@@ -4522,7 +4522,104 @@ body {
 
 /* Play from the library: pre-launch RAM optimizer preview. */
 .play-modal {
-  max-width: 560px;
+  max-width: 580px;
+}
+
+.play-ram-overview {
+  margin: 8px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-field);
+}
+
+.play-ram-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-bottom: 6px;
+}
+
+.play-ram-summary strong {
+  color: #ffffff;
+}
+
+.play-ram-reclaim-text {
+  color: var(--color-cyan);
+  font-weight: 600;
+}
+
+.play-ram-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.play-ram-bar-used {
+  display: flex;
+  justify-content: flex-end;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.play-ram-bar-reclaim {
+  height: 100%;
+  background: var(--color-cyan);
+  transition: width 0.2s ease;
+}
+
+.play-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.play-threshold-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-right: auto;
+}
+
+.play-threshold-label .settings-select {
+  width: 96px;
+}
+
+.play-process-count {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--color-cyan);
+  background: rgba(0, 212, 255, 0.12);
+  white-space: nowrap;
+}
+
+.play-kept-details {
+  margin-top: 8px;
+}
+
+.play-kept-summary {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: var(--color-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.play-kept-list {
+  max-height: 140px;
 }
 
 .play-process-list {
